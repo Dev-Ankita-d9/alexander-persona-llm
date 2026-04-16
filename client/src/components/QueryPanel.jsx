@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
-import { Send, Upload, X, FileText } from "lucide-react";
+import { Send, Paperclip, X, FileText } from "lucide-react";
+import BrandSparkleLogo from "./BrandSparkleLogo";
 
 const PDF_EXTENSIONS = [".pdf"];
 const TEXT_EXTENSIONS = [".txt", ".csv", ".md", ".json"];
@@ -22,13 +23,13 @@ export default function QueryPanel({ onSubmit, isLoading }) {
     const ext = getExtension(selected.name);
 
     if (PDF_EXTENSIONS.includes(ext)) {
-      setFilePreview(`PDF file — ${(selected.size / 1024).toFixed(0)} KB — will be parsed on server`);
+      setFilePreview(`PDF — ${(selected.size / 1024).toFixed(0)} KB`);
     } else if (TEXT_EXTENSIONS.includes(ext)) {
       const reader = new FileReader();
       reader.onload = (ev) => {
         const text = ev.target.result;
         const lines = text.split("\n").length;
-        setFilePreview(`${lines} lines — ${(selected.size / 1024).toFixed(0)} KB`);
+        setFilePreview(`${lines} lines · ${(selected.size / 1024).toFixed(0)} KB`);
       };
       reader.readAsText(selected);
     } else {
@@ -49,66 +50,60 @@ export default function QueryPanel({ onSubmit, isLoading }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="query-panel">
+    <form onSubmit={handleSubmit} className="query-panel query-panel--mockup">
       <div className="query-panel-header">
+        <div className="query-panel-logo" aria-hidden="true">
+          <BrandSparkleLogo size={48} className="brand-sparkle-logo" />
+        </div>
         <h2>Ask Your Board</h2>
         <p className="subtitle">
-          Pose a question and receive a formal board resolution
+          Pose a question and receive a formal board resolution from your AI advisory board.
         </p>
       </div>
 
-      <div className="query-input-wrapper">
+      <div className="query-composer">
         <textarea
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="e.g. Should we pivot our SaaS to an AI-first product or stay the course?"
-          rows={4}
-          className="query-textarea"
+          placeholder="Describe your situation, challenge, or strategic question…"
+          rows={5}
+          className="query-textarea query-textarea--mockup"
           disabled={isLoading}
         />
-        <p className="query-hint">
-          Attach PDFs or notes for extra context — they are parsed on the server before the board
-          deliberates.
-        </p>
-      </div>
 
-      {file && (
-        <div className="file-badge">
-          <FileText size={14} />
-          <span className="file-badge-name">{file.name}</span>
-          {filePreview && <span className="file-badge-info">{filePreview}</span>}
-          <button type="button" onClick={removeFile} className="file-remove">
-            <X size={14} />
+        {file && (
+          <div className="file-badge file-badge--in-composer">
+            <FileText size={14} aria-hidden />
+            <span className="file-badge-name">{file.name}</span>
+            {filePreview && <span className="file-badge-info">{filePreview}</span>}
+            <button type="button" onClick={removeFile} className="file-remove" aria-label="Remove file">
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        <div className="query-composer-toolbar">
+          <label className="attach-link">
+            <Paperclip size={18} strokeWidth={2} aria-hidden />
+            <span>Attach</span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".txt,.csv,.md,.json,.pdf"
+              onChange={handleFileChange}
+              hidden
+              disabled={isLoading}
+            />
+          </label>
+          <button
+            type="submit"
+            className="send-circle-btn"
+            disabled={!query.trim() || isLoading}
+            aria-label={isLoading ? "Sending" : "Send to board"}
+          >
+            {isLoading ? <span className="send-circle-btn-spinner" aria-hidden /> : <Send size={18} />}
           </button>
         </div>
-      )}
-
-      <div className="query-actions">
-        <label className="upload-btn">
-          <Upload size={16} />
-          <span>Attach File</span>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".txt,.csv,.md,.json,.pdf"
-            onChange={handleFileChange}
-            hidden
-          />
-        </label>
-
-        <button type="submit" className="submit-btn" disabled={!query.trim() || isLoading}>
-          {isLoading ? (
-            <span className="btn-loading">
-              <span className="spinner" />
-              Board is deliberating...
-            </span>
-          ) : (
-            <>
-              <Send size={16} />
-              <span>Submit to Board</span>
-            </>
-          )}
-        </button>
       </div>
     </form>
   );

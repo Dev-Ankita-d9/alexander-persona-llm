@@ -11,6 +11,7 @@ import {
   ShieldAlert,
   Shield,
   CheckCircle2,
+  Check,
   AlertTriangle,
   ArrowRight,
   Scale,
@@ -39,14 +40,19 @@ function ConfidenceBadge({ level, rationale }) {
 function ConsensusList({ items }) {
   if (!items?.length) return null;
   return (
-    <div className="decision-section">
+    <div className="decision-section decision-section--consensus">
       <div className="section-header">
         <CheckCircle2 size={16} />
         <h3>Consensus</h3>
       </div>
       <ul className="consensus-list">
         {items.map((item, i) => (
-          <li key={i}>{item}</li>
+          <li key={i}>
+            <span className="consensus-item-icon" aria-hidden>
+              <Check size={15} strokeWidth={2.25} />
+            </span>
+            <span className="consensus-item-text">{item}</span>
+          </li>
         ))}
       </ul>
     </div>
@@ -165,9 +171,11 @@ export default function ResolutionPanel({
   const hasStructured = decision?.verdict;
 
   return (
-    <div className="resolution-panel">
+    <div className="resolution-panel resolution-panel--modern">
       <div className="resolution-header">
-        <Gavel size={22} />
+        <span className="resolution-header-icon" aria-hidden>
+          <Gavel size={20} strokeWidth={2} />
+        </span>
         <h2>Board Decision</h2>
       </div>
 

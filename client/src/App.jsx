@@ -15,6 +15,7 @@ import FeedbackRefineButton from "./components/FeedbackRefineButton";
 import HistoryPanel from "./components/HistoryPanel";
 import OnePagerPanel from "./components/OnePagerPanel";
 import ThemeToggle from "./components/ThemeToggle";
+import BrandSparkleLogo from "./components/BrandSparkleLogo";
 
 const ADVISOR_MODELS = getAdvisorModelsMap();
 
@@ -178,48 +179,26 @@ export default function App() {
   }, [query, resolution, rating, activeAdvisors]);
 
   return (
-    <div className="app">
-      <header className="app-header">
-        <div className="header-content">
-          <div className="logo">
-            <div className="logo-icon">
-              <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden>
-                <rect width="28" height="28" rx="8" fill="url(#logo-grad)" />
-                <path
-                  d="M8 14h4m4 0h4M14 8v4m0 4v4"
-                  stroke="#fff"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-                <defs>
-                  <linearGradient
-                    id="logo-grad"
-                    x1="0"
-                    y1="0"
-                    x2="28"
-                    y2="28"
-                  >
-                    <stop stopColor="#6366f1" />
-                    <stop offset="1" stopColor="#06b6d4" />
-                  </linearGradient>
-                </defs>
-              </svg>
+    <div className="app app--mockup-home">
+      <header className="app-header app-header--mockup">
+        <div className="header-content header-content--mockup">
+          <div className="logo logo--mockup">
+            <div className="logo-icon logo-icon--mockup" aria-hidden>
+              <BrandSparkleLogo size={36} className="brand-sparkle-logo" />
             </div>
             <h1>Board Room</h1>
           </div>
-          <div className="header-right">
-            <p className="header-tagline">
-              AI-powered strategic advisory board
-            </p>
+          <div className="header-right header-right--mockup">
+            <p className="header-tagline header-tagline--mockup">AI advisory board</p>
             <ThemeToggle theme={theme} onToggle={toggleTheme} />
           </div>
         </div>
       </header>
 
-      <main className="app-main">
-        <section className="app-input-stack" aria-label="Question and board">
+      <main className="app-main app-main--mockup">
+        <section className="app-input-stack app-input-stack--mockup" aria-label="Question and board">
           <QueryPanel onSubmit={handleSubmit} isLoading={isDeliberating} />
-          <div className="persona-shell">
+          <div className="persona-shell persona-shell--mockup">
             <PersonaToggleBar
               advisors={ADVISORS}
               activeAdvisors={activeAdvisors}
