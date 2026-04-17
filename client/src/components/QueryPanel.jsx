@@ -1,15 +1,23 @@
 import { useState, useRef } from "react";
 import { Send, Paperclip, X, FileText } from "lucide-react";
 import BrandSparkleLogo from "./BrandSparkleLogo";
+import OutputFormatSelector from "./OutputFormatSelector";
 
 const PDF_EXTENSIONS = [".pdf"];
 const TEXT_EXTENSIONS = [".txt", ".csv", ".md", ".json"];
+const EXCEL_EXTENSIONS = [".xlsx", ".xls"];
+const PPTX_EXTENSIONS = [".pptx"];
 
 function getExtension(name) {
   return (name || "").toLowerCase().replace(/^.*(\.[^.]+)$/, "$1");
 }
 
-export default function QueryPanel({ onSubmit, isLoading }) {
+export default function QueryPanel({
+  onSubmit,
+  isLoading,
+  outputFormat,
+  onFormatChange,
+}) {
   const [query, setQuery] = useState("");
   const [file, setFile] = useState(null);
   const [filePreview, setFilePreview] = useState(null);
@@ -21,19 +29,23 @@ export default function QueryPanel({ onSubmit, isLoading }) {
 
     setFile(selected);
     const ext = getExtension(selected.name);
+    const kb = (selected.size / 1024).toFixed(0);
 
     if (PDF_EXTENSIONS.includes(ext)) {
-      setFilePreview(`PDF — ${(selected.size / 1024).toFixed(0)} KB`);
+      setFilePreview(`PDF — ${kb} KB`);
+    } else if (EXCEL_EXTENSIONS.includes(ext)) {
+      setFilePreview(`Excel — ${kb} KB`);
+    } else if (PPTX_EXTENSIONS.includes(ext)) {
+      setFilePreview(`PowerPoint — ${kb} KB`);
     } else if (TEXT_EXTENSIONS.includes(ext)) {
       const reader = new FileReader();
       reader.onload = (ev) => {
-        const text = ev.target.result;
-        const lines = text.split("\n").length;
-        setFilePreview(`${lines} lines · ${(selected.size / 1024).toFixed(0)} KB`);
+        const lines = ev.target.result.split("\n").length;
+        setFilePreview(`${lines} lines · ${kb} KB`);
       };
       reader.readAsText(selected);
     } else {
-      setFilePreview(`${(selected.size / 1024).toFixed(0)} KB`);
+      setFilePreview(`${kb} KB`);
     }
   };
 
@@ -46,7 +58,7 @@ export default function QueryPanel({ onSubmit, isLoading }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!query.trim() || isLoading) return;
-    onSubmit({ query: query.trim(), file: file || null });
+    onSubmit({ query: query.trim(), file: file || null, outputFormat });
   };
 
   return (
@@ -55,8 +67,8 @@ export default function QueryPanel({ onSubmit, isLoading }) {
         <div className="query-panel-logo" aria-hidden="true">
           <BrandSparkleLogo size={48} className="brand-sparkle-logo" />
         </div>
-        <h2>Ask Your Board</h2>
-        <p className="subtitle">
+        <h2 className="text-balance tracking-tight">Ask Your Board</h2>
+        <p className="subtitle text-pretty">
           Pose a question and receive a formal board resolution from your AI advisory board.
         </p>
       </div>
@@ -67,7 +79,7 @@ export default function QueryPanel({ onSubmit, isLoading }) {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Describe your situation, challenge, or strategic question…"
           rows={5}
-          className="query-textarea query-textarea--mockup"
+          className="query-textarea query-textarea--mockup leading-relaxed"
           disabled={isLoading}
         />
 
@@ -76,11 +88,22 @@ export default function QueryPanel({ onSubmit, isLoading }) {
             <FileText size={14} aria-hidden />
             <span className="file-badge-name">{file.name}</span>
             {filePreview && <span className="file-badge-info">{filePreview}</span>}
-            <button type="button" onClick={removeFile} className="file-remove" aria-label="Remove file">
+            <button
+              type="button"
+              onClick={removeFile}
+              className="file-remove"
+              aria-label="Remove file"
+            >
               <X size={14} />
             </button>
           </div>
         )}
+
+        <OutputFormatSelector
+          value={outputFormat}
+          onChange={onFormatChange}
+          disabled={isLoading}
+        />
 
         <div className="query-composer-toolbar">
           <label className="attach-link">
@@ -89,7 +112,7 @@ export default function QueryPanel({ onSubmit, isLoading }) {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".txt,.csv,.md,.json,.pdf"
+              accept=".txt,.csv,.md,.json,.pdf,.xlsx,.xls,.pptx"
               onChange={handleFileChange}
               hidden
               disabled={isLoading}
@@ -101,7 +124,11 @@ export default function QueryPanel({ onSubmit, isLoading }) {
             disabled={!query.trim() || isLoading}
             aria-label={isLoading ? "Sending" : "Send to board"}
           >
-            {isLoading ? <span className="send-circle-btn-spinner" aria-hidden /> : <Send size={18} />}
+            {isLoading ? (
+              <span className="send-circle-btn-spinner" aria-hidden />
+            ) : (
+              <Send size={18} />
+            )}
           </button>
         </div>
       </div>

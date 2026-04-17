@@ -30,8 +30,8 @@ export default function DeliberationProgress({
         <Loader2 size={22} className="spinning" aria-hidden />
       </div>
       <div className="loader-text">
-        <span className="loader-label">{label}</span>
-        <span className="loader-hint">Your board is working through research, debate, and synthesis</span>
+        <span className="loader-label font-medium">{label}</span>
+        <span className="loader-hint text-pretty">Your board is working through research, debate, and synthesis</span>
       </div>
     </div>
   );

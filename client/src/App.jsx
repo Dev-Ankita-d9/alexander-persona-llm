@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { ADVISORS, SYNTHESIS_MODEL, getAdvisorModelsMap } from "./advisors";
+import { ADVISORS, BOARD_PRESETS, SYNTHESIS_MODEL, getAdvisorModelsMap } from "./advisors";
 import {
   deliberate,
   refineWithFeedback,
@@ -14,6 +14,7 @@ import BoardInsights from "./components/BoardInsights";
 import FeedbackRefineButton from "./components/FeedbackRefineButton";
 import HistoryPanel from "./components/HistoryPanel";
 import OnePagerPanel from "./components/OnePagerPanel";
+import EmailDraftPanel from "./components/EmailDraftPanel";
 import ThemeToggle from "./components/ThemeToggle";
 import BrandSparkleLogo from "./components/BrandSparkleLogo";
 
@@ -29,9 +30,10 @@ function getInitialTheme() {
 
 export default function App() {
   const [theme, setTheme] = useState(getInitialTheme);
-  const [activeAdvisors, setActiveAdvisors] = useState(
-    ADVISORS.map((a) => a.id)
-  );
+  const [activeAdvisors, setActiveAdvisors] = useState(ADVISORS.map((a) => a.id));
+  const [outputFormat, setOutputFormat] = useState("structured-memo");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
   const [query, setQuery] = useState("");
   const [isDeliberating, setIsDeliberating] = useState(false);
   const [currentStage, setCurrentStage] = useState(null);
@@ -72,8 +74,12 @@ export default function App() {
     );
   }, []);
 
+  const handlePresetSelect = useCallback((ids) => {
+    setActiveAdvisors(ids);
+  }, []);
+
   const handleSubmit = useCallback(
-    async ({ query: q, file }) => {
+    async ({ query: q, file, outputFormat: fmt }) => {
       setQuery(q);
       setIsDeliberating(true);
       setCurrentStage(null);
@@ -99,6 +105,7 @@ export default function App() {
             file: file || undefined,
             advisorModels: ADVISOR_MODELS,
             synthesisModel: SYNTHESIS_MODEL,
+            outputFormat: fmt || outputFormat,
           },
           (event, data) => {
             switch (event) {
@@ -132,7 +139,7 @@ export default function App() {
         setIsDeliberating(false);
       }
     },
-    [activeAdvisors]
+    [activeAdvisors, outputFormat]
   );
 
   const handleRate = useCallback(
@@ -178,6 +185,8 @@ export default function App() {
     }
   }, [query, resolution, rating, activeAdvisors]);
 
+  const hasResult = !!(resolution || decision);
+
   return (
     <div className="app app--mockup-home">
       <header className="app-header app-header--mockup">
@@ -195,23 +204,32 @@ export default function App() {
         </div>
       </header>
 
-      <main className="app-main app-main--mockup">
-        <section className="app-input-stack app-input-stack--mockup" aria-label="Question and board">
-          <QueryPanel onSubmit={handleSubmit} isLoading={isDeliberating} />
+      <main className="app-main app-main--mockup antialiased">
+        {/* Input stack: query → board selection */}
+        <section
+          className="app-input-stack app-input-stack--mockup"
+          aria-label="Question and board"
+        >
+          <QueryPanel
+            onSubmit={handleSubmit}
+            isLoading={isDeliberating}
+            outputFormat={outputFormat}
+            onFormatChange={setOutputFormat}
+          />
           <div className="persona-shell persona-shell--mockup">
             <PersonaToggleBar
               advisors={ADVISORS}
               activeAdvisors={activeAdvisors}
               onToggle={handleToggle}
+              presets={BOARD_PRESETS}
+              onPresetSelect={handlePresetSelect}
             />
           </div>
         </section>
 
         {globalError && (
           <div className="global-error" role="alert">
-            <span className="global-error-icon" aria-hidden="true">
-              !
-            </span>
+            <span className="global-error-icon" aria-hidden="true">!</span>
             {globalError}
           </div>
         )}
@@ -223,36 +241,69 @@ export default function App() {
           />
         )}
 
-        <div
-          className={`app-outcomes${isDeliberating ? " app-outcomes--busy" : ""}`}
-        >
-          <ResolutionPanel
-            resolution={resolution}
-            decision={decision}
-            warnings={warnings}
-            researchSources={researchSources}
-            onRate={handleRate}
-            currentRating={rating}
-          />
+        {/* Primary output */}
+        <div className={`app-outcomes${isDeliberating ? " app-outcomes--busy" : ""}`}>
+          {/* Structured memo / action-plan / quick-answer → ResolutionPanel */}
+          {hasResult && outputFormat !== "email-draft" && outputFormat !== "one-pager" && (
+            <ResolutionPanel
+              resolution={resolution}
+              decision={decision}
+              warnings={warnings}
+              researchSources={researchSources}
+              onRate={handleRate}
+              currentRating={rating}
+            />
+          )}
 
-          <OnePagerPanel onePager={onePager} />
+          {/* One-pager format */}
+          {outputFormat === "one-pager" && onePager && (
+            <OnePagerPanel onePager={onePager} />
+          )}
 
-          <FeedbackRefineButton
-            onRefine={handleRefine}
-            isRefining={isRefining}
-            refinement={refinement}
-            canRefine={!!rating && !!resolution}
-          />
+          {/* Email draft format */}
+          {outputFormat === "email-draft" && hasResult && (
+            <EmailDraftPanel decision={decision} query={query} />
+          )}
 
-          <BoardInsights
-            advisorResponses={advisorResponses}
-            debateResponses={debateResponses}
-            followUpQuestions={followUpQuestions}
-            followUpResponses={followUpResponses}
-            errors={errors}
-          />
+          {hasResult && (
+            <FeedbackRefineButton
+              onRefine={handleRefine}
+              isRefining={isRefining}
+              refinement={refinement}
+              canRefine={!!rating && !!resolution}
+            />
+          )}
 
-          <HistoryPanel feedback={feedback} />
+          {/* Advanced view toggle */}
+          {hasResult && (
+            <div className="advanced-view-toggle">
+              <button
+                type="button"
+                className="advanced-toggle-btn"
+                onClick={() => setShowAdvanced((v) => !v)}
+                aria-expanded={showAdvanced}
+              >
+                {showAdvanced ? "Hide board deliberation" : "Show board deliberation"}
+                <span className="advanced-toggle-chevron" aria-hidden>
+                  {showAdvanced ? "▲" : "▼"}
+                </span>
+              </button>
+            </div>
+          )}
+
+          {/* Secondary panels — hidden by default */}
+          {showAdvanced && (
+            <div className="advanced-panels">
+              <BoardInsights
+                advisorResponses={advisorResponses}
+                debateResponses={debateResponses}
+                followUpQuestions={followUpQuestions}
+                followUpResponses={followUpResponses}
+                errors={errors}
+              />
+              <HistoryPanel feedback={feedback} />
+            </div>
+          )}
         </div>
       </main>
 

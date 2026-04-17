@@ -48,7 +48,7 @@ export default function BoardInsights({
                   <div className="insight-name-group">
                     <div className="insight-dot" />
                     <div>
-                      <h3>{advisor.name}</h3>
+                      <h3 className="font-semibold">{advisor.name}</h3>
                       {advisor.role && (
                         <span className="insight-role">{advisor.role}</span>
                       )}
@@ -62,7 +62,7 @@ export default function BoardInsights({
                 <div className="insight-phase-label">
                   <span className="phase-tag initial">Initial Position</span>
                 </div>
-                <div className="insight-body">
+                <div className="insight-body leading-relaxed">
                   <ReactMarkdown>{response}</ReactMarkdown>
                 </div>
 
@@ -72,7 +72,7 @@ export default function BoardInsights({
                       <Swords size={14} />
                       <span>Debate Rebuttal &amp; Refined Position</span>
                     </div>
-                    <div className="debate-body">
+                    <div className="debate-body leading-relaxed">
                       <ReactMarkdown>{debateResponses[id]}</ReactMarkdown>
                     </div>
                   </div>
@@ -110,7 +110,7 @@ export default function BoardInsights({
                   <div className="insight-name-group">
                     <div className="insight-dot" />
                     <div>
-                      <h3>{advisor?.name || id}</h3>
+                      <h3 className="font-semibold">{advisor?.name || id}</h3>
                       {advisor?.role && (
                         <span className="insight-role">{advisor.role}</span>
                       )}

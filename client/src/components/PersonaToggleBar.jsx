@@ -1,42 +1,70 @@
 import { Check, Circle } from "lucide-react";
 
-const ROLE_SHORT = {
-  "vc-musk": "VC",
-  "operator-bezos": "Operator",
-  "growth-gary": "Growth",
-  "skeptic-taleb": "Skeptic",
-};
+function activePresetId(advisors, activeAdvisors, presets) {
+  const active = new Set(activeAdvisors);
+  for (const preset of presets) {
+    const ids = new Set(preset.advisorIds);
+    if (
+      ids.size === active.size &&
+      preset.advisorIds.every((id) => active.has(id))
+    ) {
+      return preset.id;
+    }
+  }
+  return null;
+}
 
-export default function PersonaToggleBar({ advisors, activeAdvisors, onToggle }) {
+export default function PersonaToggleBar({
+  advisors,
+  activeAdvisors,
+  onToggle,
+  presets = [],
+  onPresetSelect,
+}) {
+  const currentPreset = activePresetId(advisors, activeAdvisors, presets);
+
   return (
     <div className="persona-bar persona-bar--mockup">
-      <span className="persona-bar-label">Your board</span>
-      <div className="persona-chips persona-chips--mockup">
+      <div className="persona-bar-header">
+        <span className="persona-bar-label">Your board</span>
+        {presets.length > 0 && (
+          <div className="persona-presets">
+            {presets.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                className={`preset-chip${currentPreset === preset.id ? " preset-chip--active" : ""}`}
+                onClick={() => onPresetSelect?.(preset.advisorIds)}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="persona-grid">
         {advisors.map((advisor) => {
           const isActive = activeAdvisors.includes(advisor.id);
-          const short = advisor.roleShort || ROLE_SHORT[advisor.id] || advisor.role;
           return (
             <button
               key={advisor.id}
               type="button"
-              className={`persona-chip persona-chip--mockup ${isActive ? "active" : ""}`}
-              style={{
-                "--advisor-color": advisor.color,
-                "--advisor-bg": advisor.color + "22",
-                "--advisor-border": advisor.color + "55",
-              }}
+              className={`advisor-chip${isActive ? " advisor-chip--active" : ""}`}
+              style={{ "--advisor-color": advisor.color }}
               onClick={() => onToggle(advisor.id)}
+              aria-pressed={isActive}
               title={advisor.description}
             >
-              <span className="chip-check" aria-hidden>
+              <span className="advisor-chip-icon" aria-hidden>
                 {isActive ? (
-                  <Check size={14} strokeWidth={2.5} />
+                  <Check size={13} strokeWidth={2.5} />
                 ) : (
-                  <Circle size={14} strokeWidth={2} className="chip-check-empty" />
+                  <Circle size={13} strokeWidth={2} />
                 )}
               </span>
-              <span className="chip-name">{advisor.name}</span>
-              <span className="chip-role-short">({short})</span>
+              <span className="advisor-chip-name">{advisor.name}</span>
+              <span className="advisor-chip-role">({advisor.role})</span>
             </button>
           );
         })}
