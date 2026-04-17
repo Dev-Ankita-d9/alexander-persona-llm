@@ -9,13 +9,14 @@ export async function deliberate(params, onEvent) {
     formData.append("activeAdvisors", JSON.stringify(params.activeAdvisors));
     formData.append("advisorModels", JSON.stringify(params.advisorModels || {}));
     if (params.synthesisModel) formData.append("synthesisModel", params.synthesisModel);
+    formData.append("outputFormat", params.outputFormat || "structured-memo");
     formData.append("file", params.file);
     fetchOptions = { method: "POST", body: formData };
   } else {
     fetchOptions = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(params),
+      body: JSON.stringify({ ...params, outputFormat: params.outputFormat || "structured-memo" }),
     };
   }
 
@@ -61,6 +62,16 @@ export async function deliberate(params, onEvent) {
       }
     }
   }
+}
+
+export async function generateEmailDraft({ decision, query, model }) {
+  const res = await fetch(`${API_BASE}/advisors/email-draft`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision, query, model }),
+  });
+  if (!res.ok) throw new Error("Email draft generation failed");
+  return res.json();
 }
 
 export async function refineWithFeedback({

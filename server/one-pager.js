@@ -125,12 +125,14 @@ async function generateOnePager(parsedSchema, decision, scoringSummary, advisorR
 
   const decisionSection = decision
     ? `Verdict: ${decision.verdict || "N/A"}
+Key reasoning: ${(decision.keyReasoning || []).join(" | ") || "N/A"}
 Confidence: ${decision.confidence || "N/A"}
 Consensus: ${(decision.consensus || []).join("; ")}
 Conflicts Resolved: ${(decision.conflictsResolved || []).map((c) => `${c.topic}: ${c.chairRuling}`).join("; ")}
 Key Risks: ${(decision.risks || []).map((r) => `${r.risk} (${r.severity}): ${r.mitigation}`).join("; ")}
 Action Items: ${(decision.actionItems || []).map((a) => `${a.action} [${a.priority}]`).join("; ")}
 Dissent: ${decision.dissent || "None"}
+Advisor highlights: ${(decision.advisorHighlights || []).map((h) => `${h.name}: ${h.highlight}`).join("; ") || "None"}
 Narrative: ${decision.narrative || "N/A"}`
     : "No structured decision available";
 

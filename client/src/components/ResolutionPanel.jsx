@@ -16,6 +16,8 @@ import {
   ArrowRight,
   Scale,
   Target,
+  ListChecks,
+  Users,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
@@ -24,6 +26,70 @@ const CONFIDENCE_CONFIG = {
   medium: { label: "Medium Confidence", icon: Shield, className: "confidence-medium" },
   low: { label: "Low Confidence", icon: ShieldAlert, className: "confidence-low" },
 };
+
+/** 3–5 bullets: primary from keyReasoning, else consensus lines for older decisions */
+function getKeyReasoningBullets(decision) {
+  const fromChair = Array.isArray(decision.keyReasoning)
+    ? decision.keyReasoning.filter(Boolean).slice(0, 5)
+    : [];
+  if (fromChair.length) return { bullets: fromChair, isFallback: false };
+  const fromConsensus = (decision.consensus || []).filter(Boolean).slice(0, 5);
+  return { bullets: fromConsensus, isFallback: fromConsensus.length > 0 };
+}
+
+function normalizeAdvisorHighlights(decision) {
+  const raw = decision.advisorHighlights;
+  if (!raw || !Array.isArray(raw)) return [];
+  return raw
+    .filter((h) => h && (h.highlight || h.name))
+    .map((h) => ({
+      name: h.name || "Advisor",
+      highlight: h.highlight || "",
+    }))
+    .filter((h) => h.highlight);
+}
+
+function KeyReasoningSection({ bullets, isFallback }) {
+  if (!bullets?.length) return null;
+  return (
+    <div className="decision-section decision-section--key-reasoning">
+      <div className="section-header">
+        <ListChecks size={16} />
+        <h3>Key reasoning</h3>
+      </div>
+      {isFallback && (
+        <p className="key-reasoning-fallback-hint">
+          Where the board aligned (structured summary was unavailable for this run).
+        </p>
+      )}
+      <ul className="key-reasoning-list">
+        {bullets.map((line, i) => (
+          <li key={i} className="text-pretty">{line}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function SubdetailsBlock({ icon: Icon, title, hint, children }) {
+  return (
+    <details className="resolution-subdetails">
+      <summary className="resolution-subdetails-summary">
+        <span className="resolution-subdetails-summary-main">
+          {Icon && (
+            <span className="resolution-subdetails-icon" aria-hidden>
+              <Icon size={16} />
+            </span>
+          )}
+          <span className="resolution-subdetails-title">{title}</span>
+          {hint && <span className="resolution-subdetails-hint">{hint}</span>}
+        </span>
+        <ChevronDown className="resolution-subdetails-chevron" size={16} aria-hidden />
+      </summary>
+      <div className="resolution-subdetails-body">{children}</div>
+    </details>
+  );
+}
 
 function ConfidenceBadge({ level, rationale }) {
   const config = CONFIDENCE_CONFIG[level] || CONFIDENCE_CONFIG.medium;
@@ -169,6 +235,9 @@ export default function ResolutionPanel({
 
   const hasSources = researchSources?.length > 0;
   const hasStructured = decision?.verdict;
+  const { bullets: keyReasoningBullets, isFallback: keyReasoningFallback } =
+    hasStructured ? getKeyReasoningBullets(decision) : { bullets: [], isFallback: false };
+  const advisorHighlightRows = hasStructured ? normalizeAdvisorHighlights(decision) : [];
 
   return (
     <div className="resolution-panel resolution-panel--modern">
@@ -176,7 +245,7 @@ export default function ResolutionPanel({
         <span className="resolution-header-icon" aria-hidden>
           <Gavel size={20} strokeWidth={2} />
         </span>
-        <h2>Board Decision</h2>
+        <h2 className="tracking-tight">Board Decision</h2>
       </div>
 
       {warnings?.length > 0 && (
@@ -190,7 +259,11 @@ export default function ResolutionPanel({
       {hasStructured ? (
         <div className="structured-decision">
           <div className="verdict-block">
-            <div className="verdict-text">{decision.verdict}</div>
+            <div className="decision-hero-label">Decision</div>
+            <p className="decision-hero-micro">
+              Clear recommendation — no filler. Act on this first.
+            </p>
+            <div className="verdict-text text-pretty">{decision.verdict}</div>
             {decision.confidence && (
               <ConfidenceBadge
                 level={decision.confidence}
@@ -199,7 +272,14 @@ export default function ResolutionPanel({
             )}
           </div>
 
-          <ConsensusList items={decision.consensus} />
+          <KeyReasoningSection
+            bullets={keyReasoningBullets}
+            isFallback={keyReasoningFallback}
+          />
+
+          <ConsensusList
+            items={keyReasoningFallback ? [] : decision.consensus}
+          />
           <ConflictsResolved conflicts={decision.conflictsResolved} />
           <RiskAssessment risks={decision.risks} />
           <ActionItems items={decision.actionItems} />
@@ -214,14 +294,36 @@ export default function ResolutionPanel({
             </div>
           )}
 
+          {advisorHighlightRows.length > 0 && (
+            <SubdetailsBlock
+              icon={Users}
+              title="Advisor highlights"
+              hint="Optional — not the main recommendation"
+            >
+              <ul className="advisor-highlights-list">
+                {advisorHighlightRows.map((row, i) => (
+                  <li key={i}>
+                    <span className="advisor-highlights-name">{row.name}</span>
+                    <span className="advisor-highlights-text">{row.highlight}</span>
+                  </li>
+                ))}
+              </ul>
+            </SubdetailsBlock>
+          )}
+
           {decision.narrative && (
-            <div className="decision-narrative">
-              <ReactMarkdown>{decision.narrative}</ReactMarkdown>
-            </div>
+            <SubdetailsBlock
+              title="Additional context"
+              hint="Optional"
+            >
+              <div className="decision-narrative decision-narrative--subdetails">
+                <ReactMarkdown>{decision.narrative}</ReactMarkdown>
+              </div>
+            </SubdetailsBlock>
           )}
         </div>
       ) : (
-        <div className="resolution-body">
+        <div className="resolution-body prose-sm">
           <ReactMarkdown>{resolution}</ReactMarkdown>
         </div>
       )}
