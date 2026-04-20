@@ -1,4 +1,5 @@
 import { Check, Circle } from "lucide-react";
+import AdvisorAvatar from "./AdvisorAvatar";
 
 function activePresetId(advisors, activeAdvisors, presets) {
   const active = new Set(activeAdvisors);
@@ -56,15 +57,14 @@ export default function PersonaToggleBar({
               aria-pressed={isActive}
               title={advisor.description}
             >
-              <span className="advisor-chip-icon" aria-hidden>
-                {isActive ? (
-                  <Check size={13} strokeWidth={2.5} />
-                ) : (
-                  <Circle size={13} strokeWidth={2} />
-                )}
+              <span className="advisor-chip-avatar" aria-hidden>
+                <AdvisorAvatar advisorId={advisor.id} size={28} />
               </span>
               <span className="advisor-chip-name">{advisor.name}</span>
-              <span className="advisor-chip-role">({advisor.role})</span>
+              <span className="advisor-chip-role">({advisor.roleShort})</span>
+              <span className="advisor-chip-check" aria-hidden>
+                {isActive ? <Check size={11} strokeWidth={2.5} /> : <Circle size={11} strokeWidth={2} />}
+              </span>
             </button>
           );
         })}

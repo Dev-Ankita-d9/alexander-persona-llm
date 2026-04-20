@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { ADVISORS, BOARD_PRESETS, SYNTHESIS_MODEL, getAdvisorModelsMap } from "./advisors";
 import {
   deliberate,
+  deliberateFollowup,
   refineWithFeedback,
   submitFeedback,
   getFeedbackHistory,
@@ -15,6 +16,7 @@ import FeedbackRefineButton from "./components/FeedbackRefineButton";
 import HistoryPanel from "./components/HistoryPanel";
 import OnePagerPanel from "./components/OnePagerPanel";
 import EmailDraftPanel from "./components/EmailDraftPanel";
+import BoardFollowUpPanel from "./components/BoardFollowUpPanel";
 import ThemeToggle from "./components/ThemeToggle";
 import BrandSparkleLogo from "./components/BrandSparkleLogo";
 
@@ -50,6 +52,8 @@ export default function App() {
   const [rating, setRating] = useState(null);
   const [isRefining, setIsRefining] = useState(false);
   const [refinement, setRefinement] = useState(null);
+  const [boardQuestionsForUser, setBoardQuestionsForUser] = useState([]);
+  const [isAnsweringBoard, setIsAnsweringBoard] = useState(false);
   const [feedback, setFeedback] = useState([]);
   const [globalError, setGlobalError] = useState(null);
 
@@ -95,6 +99,8 @@ export default function App() {
       setWarnings([]);
       setRating(null);
       setRefinement(null);
+      setBoardQuestionsForUser([]);
+      setIsAnsweringBoard(false);
       setGlobalError(null);
 
       try {
@@ -126,6 +132,7 @@ export default function App() {
                 if (data.researchSources) setResearchSources(data.researchSources);
                 if (data.errors) setErrors(data.errors);
                 setWarnings(data.warnings || []);
+                setBoardQuestionsForUser(data.boardQuestionsForUser || []);
                 break;
               case "error":
                 setGlobalError(data.message);
@@ -184,6 +191,29 @@ export default function App() {
       setIsRefining(false);
     }
   }, [query, resolution, rating, activeAdvisors]);
+
+  const handleFollowUpSubmit = useCallback(
+    async (answers) => {
+      setIsAnsweringBoard(true);
+      try {
+        const data = await deliberateFollowup({
+          originalQuery: query,
+          previousDecision: decision,
+          answers,
+          activeAdvisors,
+          synthesisModel: SYNTHESIS_MODEL,
+        });
+        if (data.resolution) setResolution(data.resolution);
+        if (data.decision) setDecision(data.decision);
+        setBoardQuestionsForUser([]);
+      } catch (err) {
+        setGlobalError(err.message);
+      } finally {
+        setIsAnsweringBoard(false);
+      }
+    },
+    [query, decision, activeAdvisors]
+  );
 
   const hasResult = !!(resolution || decision);
 
@@ -250,6 +280,7 @@ export default function App() {
               decision={decision}
               warnings={warnings}
               researchSources={researchSources}
+              activeAdvisors={activeAdvisors}
               onRate={handleRate}
               currentRating={rating}
             />
@@ -263,6 +294,14 @@ export default function App() {
           {/* Email draft format */}
           {outputFormat === "email-draft" && hasResult && (
             <EmailDraftPanel decision={decision} query={query} />
+          )}
+
+          {hasResult && boardQuestionsForUser.length > 0 && (
+            <BoardFollowUpPanel
+              questions={boardQuestionsForUser}
+              onSubmit={handleFollowUpSubmit}
+              isLoading={isAnsweringBoard}
+            />
           )}
 
           {hasResult && (

@@ -64,6 +64,16 @@ export async function deliberate(params, onEvent) {
   }
 }
 
+export async function deliberateFollowup({ originalQuery, previousDecision, answers, activeAdvisors, synthesisModel }) {
+  const res = await fetch(`${API_BASE}/advisors/deliberate-followup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ originalQuery, previousDecision, answers, activeAdvisors, synthesisModel }),
+  });
+  if (!res.ok) throw new Error("Follow-up refinement failed");
+  return res.json();
+}
+
 export async function generateEmailDraft({ decision, query, model }) {
   const res = await fetch(`${API_BASE}/advisors/email-draft`, {
     method: "POST",

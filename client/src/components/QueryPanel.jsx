@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
-import { Send, Paperclip, X, FileText } from "lucide-react";
+import { Send, Paperclip, X, FileText, ChevronDown } from "lucide-react";
 import BrandSparkleLogo from "./BrandSparkleLogo";
-import OutputFormatSelector from "./OutputFormatSelector";
+import { FORMATS } from "./OutputFormatSelector";
 
 const PDF_EXTENSIONS = [".pdf"];
 const TEXT_EXTENSIONS = [".txt", ".csv", ".md", ".json"];
@@ -21,7 +21,10 @@ export default function QueryPanel({
   const [query, setQuery] = useState("");
   const [file, setFile] = useState(null);
   const [filePreview, setFilePreview] = useState(null);
+  const [showFormats, setShowFormats] = useState(false);
   const fileInputRef = useRef(null);
+
+  const activeFormat = FORMATS.find((f) => f.id === outputFormat) || FORMATS[0];
 
   const handleFileChange = (e) => {
     const selected = e.target.files?.[0];
@@ -59,6 +62,11 @@ export default function QueryPanel({
     e.preventDefault();
     if (!query.trim() || isLoading) return;
     onSubmit({ query: query.trim(), file: file || null, outputFormat });
+  };
+
+  const handleFormatSelect = (id) => {
+    onFormatChange(id);
+    setShowFormats(false);
   };
 
   return (
@@ -99,25 +107,50 @@ export default function QueryPanel({
           </div>
         )}
 
-        <OutputFormatSelector
-          value={outputFormat}
-          onChange={onFormatChange}
-          disabled={isLoading}
-        />
+        {showFormats && (
+          <div className="format-drawer">
+            {FORMATS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                className={`format-chip${outputFormat === f.id ? " format-chip--active" : ""}`}
+                onClick={() => handleFormatSelect(f.id)}
+                disabled={isLoading}
+                title={f.description}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="query-composer-toolbar">
-          <label className="attach-link">
-            <Paperclip size={18} strokeWidth={2} aria-hidden />
-            <span>Attach</span>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".txt,.csv,.md,.json,.pdf,.xlsx,.xls,.pptx"
-              onChange={handleFileChange}
-              hidden
+          <div className="query-composer-toolbar-left">
+            <label className="attach-link">
+              <Paperclip size={16} strokeWidth={2} aria-hidden />
+              <span>Attach</span>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".txt,.csv,.md,.json,.pdf,.xlsx,.xls,.pptx"
+                onChange={handleFileChange}
+                hidden
+                disabled={isLoading}
+              />
+            </label>
+
+            <button
+              type="button"
+              className={`format-toggle-btn${showFormats ? " format-toggle-btn--open" : ""}`}
+              onClick={() => setShowFormats((v) => !v)}
               disabled={isLoading}
-            />
-          </label>
+              title="Change output format"
+            >
+              <span className="format-toggle-label">{activeFormat.label}</span>
+              <ChevronDown size={13} className="format-toggle-chevron" />
+            </button>
+          </div>
+
           <button
             type="submit"
             className="send-circle-btn"

@@ -827,7 +827,7 @@ FIELD RULES:
 - "conflictsResolved[].chairRuling": Must state which position prevailed AND what was specifically wrong with the losing argument. A diplomatic middle-ground is not a ruling.
 - "conflictsResolved[].rulingFavor": Name the advisor whose reasoning you adopted, or "chair" if you synthesized a third position neither held.
 - "dissent": If an advisor made a point you're overruling that carries real risk, preserve it here. Not to be balanced — to be honest about what you're betting against.
-- "advisorHighlights": Use null unless a one-liner adds information the verdict doesn't already contain.
+- "advisorHighlights": Required. For each advisor who participated, provide a one-sentence quote or paraphrase of their most distinctive contribution — the specific angle, risk, or insight only they raised. Use their exact name as it appears in the board members list.
 - "narrative": Use null. The verdict and keyReasoning are enough.
 
 Field types: confidence is one of "high", "medium", "low". actionItems[].priority is one of "immediate", "short-term", "long-term". risks[].severity is one of "high", "medium", "low".
@@ -850,7 +850,7 @@ Respond with ONLY valid JSON (no markdown, no text outside the JSON):
   "risks": [{"risk": "string", "severity": "high|medium|low", "mitigation": "string"}],
   "actionItems": [{"action": "string — specific enough to assign to a person", "priority": "immediate|short-term|long-term", "rationale": "string"}],
   "dissent": "string — the strongest argument against your verdict, and why you're overruling it anyway. null if none.",
-  "advisorHighlights": null,
+  "advisorHighlights": [{"name": "AdvisorName", "highlight": "one sentence — their single most distinctive contribution"}],
   "narrative": null
 }`,
       userMessage: `${allInputs}\n\nBoard members who participated: ${advisorNames.join(", ")}\n\nIssue your ruling now. Pick sides where there is conflict. Do not average positions.`,
@@ -924,6 +924,25 @@ Respond with ONLY valid JSON (no markdown, no text outside the JSON):
       log.info(`One-pager skipped (outputFormat: ${outputFormat})`);
     }
 
+    // Generate follow-up questions FOR THE USER (board asking user to fill gaps)
+    let boardQuestionsForUser = [];
+    if (decision?.verdict && outputFormat !== "quick-answer") {
+      try {
+        const bfuRaw = await callLLM({
+          systemPrompt: `You are the Board Chair. You have just delivered a decision. Identify 1–2 questions to ask the USER that would materially strengthen or change your recommendation — not internal advisor follow-ups, but gaps in what the user provided. Be specific and direct. Return ONLY valid JSON: {"questions": [{"question": "string", "why": "string — one sentence on what changes if they answer this"}]}`,
+          userMessage: `Original question: "${query}"\nDecision delivered: "${decision.verdict}"\n\nWhat 1–2 questions would most sharpen this ruling if the user answered them? Only ask if missing information would materially change the recommendation.`,
+          model: chairModel,
+          maxTokens: 400,
+        });
+        const bfuData = parseJsonFromLLM(bfuRaw);
+        if (Array.isArray(bfuData?.questions)) {
+          boardQuestionsForUser = bfuData.questions.filter((q) => q.question).slice(0, 2);
+        }
+      } catch (err) {
+        log.error("Board Follow-Up Generation", err.message);
+      }
+    }
+
     log.complete(Date.now() - sessionStart);
 
     send("stage", { stage: "complete", message: "Decision ready" });
@@ -934,6 +953,7 @@ Respond with ONLY valid JSON (no markdown, no text outside the JSON):
       parsedSchema,
       enrichmentData,
       scoringSummary,
+      boardQuestionsForUser,
       refinementResult: refinementResult ? {
         passes: refinementResult.passes,
         stoppedReason: refinementResult.stoppedReason,
@@ -958,6 +978,45 @@ Respond with ONLY valid JSON (no markdown, no text outside the JSON):
       });
     }
     res.end();
+  }
+});
+
+// ===== Board follow-up: user answers board questions → refined decision =====
+
+router.post("/deliberate-followup", async (req, res) => {
+  const { originalQuery, previousDecision, answers, activeAdvisors: activeIds, synthesisModel } = req.body || {};
+
+  if (!originalQuery?.trim() || !answers?.length) {
+    return res.status(400).json({ error: "originalQuery and answers are required" });
+  }
+
+  const chairModel = synthesisModel || DEFAULT_MODEL;
+  const active = advisors.filter((a) => activeIds?.includes(a.id));
+
+  try {
+    const answersText = answers
+      .map((a, i) => `Q${i + 1}: ${a.question}\nA${i + 1}: ${a.answer}`)
+      .join("\n\n");
+
+    const refined = await callLLM({
+      systemPrompt: `You are the Board Chair. You delivered an initial ruling, then asked the user follow-up questions. You now have their answers. Revise your ruling if the answers change anything material. If the original ruling stands, confirm it with the new context integrated. Be decisive. Return ONLY valid JSON with the same schema as before: {verdict, keyReasoning, confidence, confidenceRationale, consensus, conflictsResolved, risks, actionItems, dissent, advisorHighlights, narrative}.`,
+      userMessage: `Original question: "${originalQuery}"\n\nInitial ruling: "${previousDecision?.verdict || ""}"\n\nUser's answers to follow-up questions:\n${answersText}\n\nRevise or confirm your ruling.`,
+      model: chairModel,
+      maxTokens: 1500,
+    });
+
+    let decision = null;
+    try {
+      decision = JSON.parse(refined.trim());
+    } catch {
+      const m = refined.match(/\{[\s\S]*\}/);
+      if (m) try { decision = JSON.parse(m[0]); } catch {}
+    }
+
+    const resolution = decision?.verdict || refined;
+    res.json({ resolution, decision });
+  } catch (err) {
+    res.status(500).json({ error: err.message || "Follow-up refinement failed" });
   }
 });
 
