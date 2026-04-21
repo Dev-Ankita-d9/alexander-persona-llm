@@ -959,6 +959,21 @@ select:focus-visible,
   color: var(--accent);
 }
 
+.priority-now, .priority-immediate {
+  background: rgba(244, 63, 94, 0.12);
+  color: var(--danger);
+}
+
+.priority-this-week, .priority-short-term {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--warning);
+}
+
+.priority-later, .priority-long-term {
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--accent);
+}
+
 .action-content {
   display: flex;
   flex-direction: column;
@@ -3968,6 +3983,32 @@ select:focus-visible,
   position: relative;
 }
 
+/* One-pager board action layer */
+.one-pager-action-layer {
+  margin-top: 4px;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.one-pager-action-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.one-pager-action-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+
 .verdict-conditions li::before {
   content: "→";
   position: absolute;
@@ -4738,6 +4779,175 @@ select:focus-visible,
   transform: rotate(180deg);
 }
 
+/* ── Past Decision Picker ──────────────────────────────────────── */
+.past-decision-picker {
+  max-width: var(--composer-board-max, 900px);
+  margin: 0 auto;
+  padding: 10px 16px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+}
+
+.past-decision-picker-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.past-decision-clear-all {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.past-decision-clear-all:hover { color: var(--danger, #e05252); }
+
+.past-decision-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.past-decision-chip {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  transition: border-color 0.15s, background 0.15s;
+  overflow: hidden;
+}
+
+.past-decision-chip:hover {
+  border-color: var(--accent);
+}
+
+.past-decision-chip--active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.past-decision-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.past-decision-chip-row:focus-visible { outline: 2px solid var(--accent); }
+
+.past-decision-chip-query {
+  font-size: 0.78rem;
+  color: var(--text);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.past-decision-chip-date {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.past-decision-chip-delete {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  color: var(--text-muted);
+  border-radius: 4px;
+  line-height: 1;
+}
+.past-decision-chip-delete:hover { color: var(--danger, #e05252); }
+
+.past-decision-chip-expanded {
+  padding: 0 12px 10px;
+  border-top: 1px solid var(--border-light);
+}
+
+.past-decision-detail {
+  padding-top: 8px;
+}
+
+.past-decision-detail-verdict {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 6px;
+  line-height: 1.4;
+}
+
+.past-decision-detail-list {
+  list-style: disc;
+  padding-left: 16px;
+  margin: 0 0 6px;
+}
+.past-decision-detail-list li {
+  font-size: 0.77rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.past-decision-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.past-decision-detail-action {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--bg-subtle, color-mix(in srgb, var(--accent) 8%, transparent));
+  color: var(--text-dim);
+}
+
+.past-decision-use-btn {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1.5px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.past-decision-use-btn:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.past-decision-use-btn--active {
+  background: var(--accent);
+  color: #fff;
+}
+.past-decision-use-btn--active:hover {
+  background: color-mix(in srgb, var(--accent) 85%, black);
+}
+
 /* ── Board Follow-Up Panel ─────────────────────────────────────── */
 .followup-panel {
   max-width: var(--composer-board-max, 900px);
@@ -4949,6 +5159,16 @@ select:focus-visible,
   gap: 8px;
   color: #ef4444;
   font-size: 13px;
+}
+
+.email-draft-action-layer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--surface-alt, color-mix(in srgb, var(--accent) 4%, var(--surface)));
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
 }
 
 .email-draft-body {
@@ -5385,6 +5605,21 @@ select:focus-visible,
   margin-bottom: 16px;
 }
 
+.impact-badge {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  padding: 3px 9px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+}
+
+.impact-low      { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+.impact-medium   { background: rgba(245, 158, 11, 0.12);  color: var(--warning); }
+.impact-high     { background: rgba(244, 63, 94, 0.12);   color: var(--danger); }
+.impact-critical { background: rgba(220, 38, 38, 0.18);   color: #dc2626; border: 1px solid rgba(220,38,38,0.3); }
+
 .verdict-hero-text {
   font-size: 1.4rem;
   font-weight: 700;
@@ -5464,7 +5699,24 @@ select:focus-visible,
   font-size: 0.93rem;
   color: var(--text);
   line-height: 1.55;
+  flex: 1;
 }
+
+.action-owner {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.owner-user     { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+.owner-ai       { background: rgba(99, 102, 241, 0.12);  color: var(--accent); }
+.owner-external { background: rgba(156, 163, 175, 0.12); color: var(--text-muted); }
 
 /* 19 ── Collapsible full analysis ────────────────────────────────── */
 .collapsible-section {

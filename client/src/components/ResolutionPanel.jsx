@@ -14,20 +14,23 @@ const CONFIDENCE_CONFIG = {
   low:    { label: "Low confidence",    icon: ShieldAlert,  className: "confidence-low"    },
 };
 
+function toArray(val) {
+  if (Array.isArray(val)) return val;
+  if (typeof val === "string" && val.trim()) return [val];
+  return [];
+}
+
 function getKeyReasoningBullets(decision) {
-  const fromChair = Array.isArray(decision.keyReasoning)
-    ? decision.keyReasoning.filter(Boolean).slice(0, 5)
-    : [];
+  const fromChair = toArray(decision.keyReasoning).filter(Boolean).slice(0, 5);
   if (fromChair.length) return { bullets: fromChair, isFallback: false };
-  const fromConsensus = (decision.consensus || []).filter(Boolean).slice(0, 5);
+  const fromConsensus = toArray(decision.consensus).filter(Boolean).slice(0, 5);
   return { bullets: fromConsensus, isFallback: fromConsensus.length > 0 };
 }
 
 function normalizeAdvisorHighlights(decision) {
-  const raw = decision.advisorHighlights;
-  if (!raw || !Array.isArray(raw)) return [];
+  const raw = toArray(decision.advisorHighlights);
   return raw
-    .filter((h) => h && (h.highlight || h.name))
+    .filter((h) => h && typeof h === "object" && (h.highlight || h.name))
     .map((h) => ({ name: h.name || "Advisor", highlight: h.highlight || "" }))
     .filter((h) => h.highlight);
 }
@@ -68,20 +71,27 @@ function CollapsibleSection({ icon: Icon, title, children, defaultOpen = false }
   );
 }
 
+const OWNER_LABELS = { user: "You", ai: "AI", external: "External" };
+const PRIORITY_ORDER = { now: 0, "this-week": 1, later: 2, immediate: 0, "short-term": 1, "long-term": 2 };
+
 function ActionItems({ items }) {
   if (!items?.length) return null;
-  const priorityOrder = { immediate: 0, "short-term": 1, "long-term": 2 };
   const sorted = [...items].sort(
-    (a, b) => (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1)
+    (a, b) => (PRIORITY_ORDER[a.priority] ?? 1) - (PRIORITY_ORDER[b.priority] ?? 1)
   );
   return (
     <div className="action-items-list">
       {sorted.map((item, i) => (
         <div key={i} className="action-item-row">
-          <span className={`action-priority priority-${item.priority || "short-term"}`}>
-            {(item.priority || "short-term").replace("-", " ")}
+          <span className={`action-priority priority-${item.priority || "this-week"}`}>
+            {(item.priority || "this-week").replace("-", " ")}
           </span>
           <span className="action-item-text">{item.action}</span>
+          {item.owner && (
+            <span className={`action-owner owner-${item.owner}`}>
+              {OWNER_LABELS[item.owner] || item.owner}
+            </span>
+          )}
         </div>
       ))}
     </div>
@@ -198,6 +208,11 @@ export default function ResolutionPanel({
 
           {/* THE VERDICT — must dominate the screen */}
           <div className="verdict-hero">
+            {decision.impact && (
+              <span className={`impact-badge impact-${decision.impact}`}>
+                {decision.impact.toUpperCase()} IMPACT
+              </span>
+            )}
             <p className="verdict-hero-text text-pretty">{decision.verdict}</p>
           </div>
 
@@ -235,10 +250,10 @@ export default function ResolutionPanel({
           )}
 
           {/* Action items — continuation of the verdict, not a separate module */}
-          {decision.actionItems?.length > 0 && (
+          {toArray(decision.actionItems).length > 0 && (
             <div className="action-block">
               <span className="action-block-label">What to do next</span>
-              <ActionItems items={decision.actionItems} />
+              <ActionItems items={toArray(decision.actionItems)} />
             </div>
           )}
 
@@ -250,10 +265,9 @@ export default function ResolutionPanel({
             />
           )}
 
-          {/* Everything else collapsed — board voices, consensus, conflicts, risks, dissent */}
-          {(decision.consensus?.length || decision.conflictsResolved?.length ||
-            decision.risks?.length || decision.dissent || advisorHighlightRows.length) ? (
-            <CollapsibleSection title="How the board reached this">
+          {/* Board Discussion — voices, consensus, narrative */}
+          {(advisorHighlightRows.length > 0 || toArray(decision.consensus).length > 0 || decision.narrative) && (
+            <CollapsibleSection title="Board Discussion">
               {advisorHighlightRows.length > 0 && (
                 <div className="analysis-sub">
                   <div className="analysis-sub-label">Board voices</div>
@@ -280,34 +294,10 @@ export default function ResolutionPanel({
                   </div>
                 </div>
               )}
-              {decision.consensus?.length > 0 && !keyReasoningFallback && (
+              {toArray(decision.consensus).length > 0 && !keyReasoningFallback && (
                 <div className="analysis-sub">
                   <div className="analysis-sub-label">Where the board agreed</div>
-                  <ConsensusList items={decision.consensus} />
-                </div>
-              )}
-              {decision.conflictsResolved?.length > 0 && (
-                <div className="analysis-sub">
-                  <div className="analysis-sub-label">
-                    <Scale size={13} /> Conflicts resolved
-                  </div>
-                  <ConflictsResolved conflicts={decision.conflictsResolved} />
-                </div>
-              )}
-              {decision.risks?.length > 0 && (
-                <div className="analysis-sub">
-                  <div className="analysis-sub-label">
-                    <AlertTriangle size={13} /> Risks
-                  </div>
-                  <RiskAssessment risks={decision.risks} />
-                </div>
-              )}
-              {decision.dissent && (
-                <div className="analysis-sub">
-                  <div className="analysis-sub-label">
-                    <ShieldAlert size={13} /> Dissenting view
-                  </div>
-                  <p className="dissent-text">{decision.dissent}</p>
+                  <ConsensusList items={toArray(decision.consensus)} />
                 </div>
               )}
               {decision.narrative && (
@@ -319,7 +309,37 @@ export default function ResolutionPanel({
                 </div>
               )}
             </CollapsibleSection>
-          ) : null}
+          )}
+
+          {/* Diverging Opinions — conflicts, risks, dissent */}
+          {(toArray(decision.conflictsResolved).length > 0 || toArray(decision.risks).length > 0 || decision.dissent) && (
+            <CollapsibleSection title="Diverging Opinions">
+              {toArray(decision.conflictsResolved).length > 0 && (
+                <div className="analysis-sub">
+                  <div className="analysis-sub-label">
+                    <Scale size={13} /> Conflicts resolved
+                  </div>
+                  <ConflictsResolved conflicts={toArray(decision.conflictsResolved)} />
+                </div>
+              )}
+              {toArray(decision.risks).length > 0 && (
+                <div className="analysis-sub">
+                  <div className="analysis-sub-label">
+                    <AlertTriangle size={13} /> Risks
+                  </div>
+                  <RiskAssessment risks={toArray(decision.risks)} />
+                </div>
+              )}
+              {decision.dissent && (
+                <div className="analysis-sub">
+                  <div className="analysis-sub-label">
+                    <ShieldAlert size={13} /> Dissenting view
+                  </div>
+                  <p className="dissent-text">{decision.dissent}</p>
+                </div>
+              )}
+            </CollapsibleSection>
+          )}
 
         </div>
       ) : (

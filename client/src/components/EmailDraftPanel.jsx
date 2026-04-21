@@ -64,6 +64,36 @@ export default function EmailDraftPanel({ decision, query }) {
         </div>
       )}
 
+      {decision?.actionItems?.length > 0 && (
+        <div className="email-draft-action-layer">
+          {decision.impact && (
+            <span className={`impact-badge impact-${decision.impact}`}>
+              {decision.impact.toUpperCase()} IMPACT
+            </span>
+          )}
+          <div className="action-items-list">
+            {[...decision.actionItems]
+              .sort((a, b) => {
+                const ord = { now: 0, "this-week": 1, later: 2 };
+                return (ord[a.priority] ?? 1) - (ord[b.priority] ?? 1);
+              })
+              .map((item, i) => (
+                <div key={i} className="action-item-row">
+                  <span className={`action-priority priority-${item.priority || "this-week"}`}>
+                    {(item.priority || "this-week").replace("-", " ")}
+                  </span>
+                  <span className="action-item-text">{item.action}</span>
+                  {item.owner && (
+                    <span className={`action-owner owner-${item.owner}`}>
+                      {item.owner === "user" ? "You" : item.owner === "ai" ? "AI" : "External"}
+                    </span>
+                  )}
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
       {draft && (
         <pre className="email-draft-body">{draft}</pre>
       )}

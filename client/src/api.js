@@ -10,6 +10,7 @@ export async function deliberate(params, onEvent) {
     formData.append("advisorModels", JSON.stringify(params.advisorModels || {}));
     if (params.synthesisModel) formData.append("synthesisModel", params.synthesisModel);
     formData.append("outputFormat", params.outputFormat || "structured-memo");
+    if (params.pastDecisions?.length) formData.append("pastDecisions", JSON.stringify(params.pastDecisions));
     formData.append("file", params.file);
     fetchOptions = { method: "POST", body: formData };
   } else {
@@ -113,6 +114,18 @@ export async function submitFeedback(entry) {
 export async function getFeedbackHistory() {
   const res = await fetch(`${API_BASE}/feedback`);
   if (!res.ok) throw new Error("Failed to load history");
+  return res.json();
+}
+
+export async function deleteFeedback(id) {
+  const res = await fetch(`${API_BASE}/feedback/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete entry");
+  return res.json();
+}
+
+export async function clearAllFeedback() {
+  const res = await fetch(`${API_BASE}/feedback`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to clear history");
   return res.json();
 }
 

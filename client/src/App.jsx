@@ -6,6 +6,8 @@ import {
   refineWithFeedback,
   submitFeedback,
   getFeedbackHistory,
+  deleteFeedback,
+  clearAllFeedback,
 } from "./api";
 import QueryPanel from "./components/QueryPanel";
 import PersonaToggleBar from "./components/PersonaToggleBar";
@@ -17,6 +19,7 @@ import HistoryPanel from "./components/HistoryPanel";
 import OnePagerPanel from "./components/OnePagerPanel";
 import EmailDraftPanel from "./components/EmailDraftPanel";
 import BoardFollowUpPanel from "./components/BoardFollowUpPanel";
+import PastDecisionPicker from "./components/PastDecisionPicker";
 import ThemeToggle from "./components/ThemeToggle";
 import BrandSparkleLogo from "./components/BrandSparkleLogo";
 
@@ -55,6 +58,7 @@ export default function App() {
   const [boardQuestionsForUser, setBoardQuestionsForUser] = useState([]);
   const [isAnsweringBoard, setIsAnsweringBoard] = useState(false);
   const [feedback, setFeedback] = useState([]);
+  const [referencedDecisions, setReferencedDecisions] = useState([]);
   const [globalError, setGlobalError] = useState(null);
 
   useEffect(() => {
@@ -112,6 +116,7 @@ export default function App() {
             advisorModels: ADVISOR_MODELS,
             synthesisModel: SYNTHESIS_MODEL,
             outputFormat: fmt || outputFormat,
+            pastDecisions: referencedDecisions,
           },
           (event, data) => {
             switch (event) {
@@ -146,28 +151,29 @@ export default function App() {
         setIsDeliberating(false);
       }
     },
-    [activeAdvisors, outputFormat]
+    [activeAdvisors, outputFormat, referencedDecisions]
   );
 
   const handleRate = useCallback(
     async (r) => {
       setRating(r);
-      const entry = {
-        id: crypto.randomUUID(),
-        query,
-        synthesis: resolution,
-        rating: r,
-        advisorsUsed: activeAdvisors.map(
-          (id) => ADVISORS.find((a) => a.id === id)?.name || id
-        ),
-      };
+      if (r !== "helpful") return;
       try {
-        await submitFeedback(entry);
+        await submitFeedback({
+          id: crypto.randomUUID(),
+          query,
+          synthesis: resolution,
+          decision: decision || null,
+          rating: r,
+          advisorsUsed: activeAdvisors.map(
+            (id) => ADVISORS.find((a) => a.id === id)?.name || id
+          ),
+        });
         const history = await getFeedbackHistory();
         setFeedback(history);
       } catch {}
     },
-    [query, resolution, activeAdvisors]
+    [query, resolution, decision, activeAdvisors]
   );
 
   const handleRefine = useCallback(async () => {
@@ -255,6 +261,24 @@ export default function App() {
               onPresetSelect={handlePresetSelect}
             />
           </div>
+          {feedback.filter((f) => f.decision?.verdict).length > 0 && (
+            <PastDecisionPicker
+              history={feedback.filter((f) => f.decision?.verdict)}
+              selected={referencedDecisions}
+              onChange={setReferencedDecisions}
+              onDelete={async (id) => {
+                await deleteFeedback(id).catch(() => {});
+                setReferencedDecisions((prev) => prev.filter((d) => d.id !== id));
+                const h = await getFeedbackHistory().catch(() => []);
+                setFeedback(h);
+              }}
+              onClearAll={async () => {
+                await clearAllFeedback().catch(() => {});
+                setReferencedDecisions([]);
+                setFeedback([]);
+              }}
+            />
+          )}
         </section>
 
         {globalError && (
@@ -288,7 +312,7 @@ export default function App() {
 
           {/* One-pager format */}
           {outputFormat === "one-pager" && onePager && (
-            <OnePagerPanel onePager={onePager} />
+            <OnePagerPanel onePager={onePager} decision={decision} />
           )}
 
           {/* Email draft format */}

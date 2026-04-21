@@ -187,6 +187,7 @@ function parseDeliberateBody(req) {
     advisorModels: body.advisorModels || {},
     synthesisModel: body.synthesisModel || null,
     outputFormat: body.outputFormat || "structured-memo",
+    pastDecisions: body.pastDecisions || [],
   };
 }
 
@@ -210,7 +211,7 @@ router.post("/deliberate", optionalFileUpload, async (req, res) => {
   }
 
   try {
-    const { query, activeIds, fileContext: bodyFileContext, advisorModels, synthesisModel, outputFormat } = parseDeliberateBody(req);
+    const { query, activeIds, fileContext: bodyFileContext, advisorModels, synthesisModel, outputFormat, pastDecisions } = parseDeliberateBody(req);
     const sessionStart = Date.now();
     const log = createSession(query, activeIds || [], req.file?.originalname);
     const chairModel = synthesisModel || DEFAULT_MODEL;
@@ -351,7 +352,15 @@ router.post("/deliberate", optionalFileUpload, async (req, res) => {
 
     if (aborted) return res.end();
 
-    const userMessage = buildUserMessage(query, fileContext, researchContext, structuredContext, enrichmentContext);
+    let userMessage = buildUserMessage(query, fileContext, researchContext, structuredContext, enrichmentContext);
+
+    if (pastDecisions?.length > 0) {
+      const pastContext = pastDecisions
+        .slice(0, 3)
+        .map((d, i) => `Decision ${i + 1} (${new Date(d.timestamp).toLocaleDateString()}): "${d.query}"\nVerdict: ${d.decision?.verdict || d.synthesis}`)
+        .join("\n\n");
+      userMessage += `\n\n<past_decisions>\nFor context, here are relevant past board decisions the user wants to reference:\n\n${pastContext}\n</past_decisions>`;
+    }
 
     // Phase 1: Distribute to board members
     log.phase("Advisor Deliberation", `Distributing to ${active.length} board members: ${active.map((a) => a.name).join(", ")}`);
@@ -433,10 +442,18 @@ router.post("/deliberate", optionalFileUpload, async (req, res) => {
         .join("\n\n");
 
       const quickDecisionRaw = await callLLM({
-        systemPrompt: `You are the Board Chair. Give a direct, actionable verdict in 2–3 sentences maximum. No lists, no elaboration. Respond with ONLY valid JSON: {"verdict": "string", "confidence": "high|medium|low"}`,
-        userMessage: `Question: "${query}"\n\nBoard opinions:\n${quickBoardSummary}\n\nGive a quick verdict.`,
+        systemPrompt: `You are the Board Chair. Give a direct, actionable verdict. Respond with ONLY valid JSON — no markdown, no text outside the JSON:
+{
+  "verdict": "string — 1–3 sentences: what to do, immediately actionable",
+  "impact": "low|medium|high|critical",
+  "keyReasoning": ["2–3 strings — the actual reasons, not advisor summaries"],
+  "confidence": "high|medium|low",
+  "actionItems": [{"action": "string — specific enough to assign", "priority": "now|this-week|later", "owner": "user|ai|external"}]
+}
+actionItems: exactly 2–3 items. Never fewer than 2. Owner rules: "user" = human must do personally; "ai" = AI tool can execute (drafting, research, code); "external" = needs specialist/vendor. Do NOT default everything to "user".`,
+        userMessage: `Question: "${query}"\n\nBoard opinions:\n${quickBoardSummary}\n\nIssue your ruling.`,
         model: chairModel,
-        maxTokens: 300,
+        maxTokens: 600,
       });
 
       let quickDecision = null;
@@ -828,13 +845,15 @@ FIELD RULES:
 - "conflictsResolved[].rulingFavor": Name the advisor whose reasoning you adopted, or "chair" if you synthesized a third position neither held.
 - "dissent": If an advisor made a point you're overruling that carries real risk, preserve it here. Not to be balanced — to be honest about what you're betting against.
 - "advisorHighlights": Required. For each advisor who participated, provide a one-sentence quote or paraphrase of their most distinctive contribution — the specific angle, risk, or insight only they raised. Use their exact name as it appears in the board members list.
+- "actionItems": Provide exactly 2–5 items. Never fewer than 2, never more than 5. Each must be a distinct concrete step — not a restatement of the verdict. Assign owner honestly: "user" = the human must do this personally; "ai" = can be executed by an AI tool (drafting, research, code, analysis); "external" = requires a third party (lawyer, accountant, agency, vendor). Do NOT default everything to "user" — if AI can realistically handle it, use "ai"; if it needs a specialist or vendor, use "external".
 - "narrative": Use null. The verdict and keyReasoning are enough.
 
-Field types: confidence is one of "high", "medium", "low". actionItems[].priority is one of "immediate", "short-term", "long-term". risks[].severity is one of "high", "medium", "low".
+Field types: confidence is one of "high", "medium", "low". impact is one of "low", "medium", "high", "critical" — how consequential this decision is if acted on or ignored. actionItems[].priority is one of "now", "this-week", "later". actionItems[].owner is one of "user", "ai", "external". risks[].severity is one of "high", "medium", "low".
 
 Respond with ONLY valid JSON (no markdown, no text outside the JSON):
 {
   "verdict": "string — 1–3 sentences: what to do, immediately actionable, no filler",
+  "impact": "low|medium|high|critical",
   "keyReasoning": ["3–5 strings — the actual reasons, not advisor summaries"],
   "confidence": "high|medium|low",
   "confidenceRationale": "string — what would change this confidence level",
@@ -848,7 +867,8 @@ Respond with ONLY valid JSON (no markdown, no text outside the JSON):
     }
   ],
   "risks": [{"risk": "string", "severity": "high|medium|low", "mitigation": "string"}],
-  "actionItems": [{"action": "string — specific enough to assign to a person", "priority": "immediate|short-term|long-term", "rationale": "string"}],
+  "actionItems": [{"action": "string — specific enough to assign to a person", "priority": "now|this-week|later", "owner": "user|ai|external", "rationale": "string"}],
+  /* actionItems: provide exactly 2–5 items. Never fewer than 2, never more than 5. Each must be a distinct concrete step, not a restatement of the verdict. */
   "dissent": "string — the strongest argument against your verdict, and why you're overruling it anyway. null if none.",
   "advisorHighlights": [{"name": "AdvisorName", "highlight": "one sentence — their single most distinctive contribution"}],
   "narrative": null
@@ -995,11 +1015,31 @@ router.post("/deliberate-followup", async (req, res) => {
 
   try {
     const answersText = answers
-      .map((a, i) => `Q${i + 1}: ${a.question}\nA${i + 1}: ${a.answer}`)
+      .map((a, i) => {
+        if (typeof a === "string") return `Answer ${i + 1}: ${a}`;
+        return `Q${i + 1}: ${a.question || ""}\nA${i + 1}: ${a.answer || a}`;
+      })
       .join("\n\n");
 
     const refined = await callLLM({
-      systemPrompt: `You are the Board Chair. You delivered an initial ruling, then asked the user follow-up questions. You now have their answers. Revise your ruling if the answers change anything material. If the original ruling stands, confirm it with the new context integrated. Be decisive. Return ONLY valid JSON with the same schema as before: {verdict, keyReasoning, confidence, confidenceRationale, consensus, conflictsResolved, risks, actionItems, dissent, advisorHighlights, narrative}.`,
+      systemPrompt: `You are the Board Chair. You delivered an initial ruling, then asked the user follow-up questions. You now have their answers. Revise your ruling if the answers change anything material. If the original ruling stands, confirm it with the new context integrated. Be decisive.
+
+Return ONLY valid JSON — no markdown, no text outside the JSON:
+{
+  "verdict": "string — 1–3 sentences: what to do, immediately actionable",
+  "impact": "low|medium|high|critical",
+  "keyReasoning": ["array of 3–5 strings — the actual reasons"],
+  "confidence": "high|medium|low",
+  "confidenceRationale": "string",
+  "consensus": ["array of strings"],
+  "conflictsResolved": [{"topic": "string", "sides": {}, "chairRuling": "string", "rulingFavor": "string"}],
+  "risks": [{"risk": "string", "severity": "high|medium|low", "mitigation": "string"}],
+  "actionItems": [{"action": "string", "priority": "now|this-week|later", "owner": "user|ai|external", "rationale": "string"}],
+  "dissent": "string or null",
+  "advisorHighlights": [{"name": "string", "highlight": "string"}],
+  "narrative": null
+}
+Owner rules for actionItems: "user" = human must do personally; "ai" = AI tool can execute (drafting, research, code, analysis); "external" = requires a specialist or vendor. Do NOT default everything to "user".`,
       userMessage: `Original question: "${originalQuery}"\n\nInitial ruling: "${previousDecision?.verdict || ""}"\n\nUser's answers to follow-up questions:\n${answersText}\n\nRevise or confirm your ruling.`,
       model: chairModel,
       maxTokens: 1500,

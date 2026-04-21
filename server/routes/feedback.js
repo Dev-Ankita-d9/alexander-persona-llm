@@ -21,9 +21,9 @@ function saveFeedback(entries) {
 }
 
 router.post("/", (req, res) => {
-  const { id, query, synthesis, rating, advisorsUsed } = req.body;
+  const { id, query, synthesis, decision, rating, advisorsUsed } = req.body;
 
-  if (!query || !synthesis || !rating) {
+  if (!query || !synthesis) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
@@ -32,6 +32,7 @@ router.post("/", (req, res) => {
     timestamp: Date.now(),
     query,
     synthesis,
+    decision: decision || null,
     rating,
     advisorsUsed: advisorsUsed || [],
     refined: false,
@@ -57,6 +58,19 @@ router.patch("/:id", (req, res) => {
   entries[idx] = { ...entries[idx], ...req.body };
   saveFeedback(entries);
   res.json(entries[idx]);
+});
+
+router.delete("/", (req, res) => {
+  saveFeedback([]);
+  res.json({ ok: true });
+});
+
+router.delete("/:id", (req, res) => {
+  const entries = loadFeedback();
+  const filtered = entries.filter((e) => e.id !== req.params.id);
+  if (filtered.length === entries.length) return res.status(404).json({ error: "Not found" });
+  saveFeedback(filtered);
+  res.json({ ok: true });
 });
 
 module.exports = router;

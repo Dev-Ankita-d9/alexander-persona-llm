@@ -110,7 +110,9 @@ function toMarkdown(op) {
   return lines.join("\n");
 }
 
-export default function OnePagerPanel({ onePager }) {
+const PRIORITY_ORDER = { now: 0, "this-week": 1, later: 2 };
+
+export default function OnePagerPanel({ onePager, decision }) {
   const [expanded, setExpanded] = useState(true);
   const [copied, setCopied] = useState(false);
 
@@ -307,6 +309,37 @@ export default function OnePagerPanel({ onePager }) {
                   </ul>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Board action layer — always shown if available */}
+          {decision?.actionItems?.length > 0 && (
+            <div className="one-pager-action-layer">
+              <div className="one-pager-action-header">
+                {decision.impact && (
+                  <span className={`impact-badge impact-${decision.impact}`}>
+                    {decision.impact.toUpperCase()} IMPACT
+                  </span>
+                )}
+                <span className="one-pager-action-label">What to do next</span>
+              </div>
+              <div className="action-items-list">
+                {[...decision.actionItems]
+                  .sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 1) - (PRIORITY_ORDER[b.priority] ?? 1))
+                  .map((item, i) => (
+                    <div key={i} className="action-item-row">
+                      <span className={`action-priority priority-${item.priority || "this-week"}`}>
+                        {(item.priority || "this-week").replace("-", " ")}
+                      </span>
+                      <span className="action-item-text">{item.action}</span>
+                      {item.owner && (
+                        <span className={`action-owner owner-${item.owner}`}>
+                          {item.owner === "user" ? "You" : item.owner === "ai" ? "AI" : "External"}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+              </div>
             </div>
           )}
         </div>
