@@ -59,6 +59,8 @@ export default function App() {
   const [isAnsweringBoard, setIsAnsweringBoard] = useState(false);
   const [feedback, setFeedback] = useState([]);
   const [referencedDecisions, setReferencedDecisions] = useState([]);
+  const [advisorStances, setAdvisorStances] = useState({});
+  const [contradictionAlert, setContradictionAlert] = useState(null);
   const [globalError, setGlobalError] = useState(null);
 
   useEffect(() => {
@@ -97,6 +99,8 @@ export default function App() {
       setFollowUpResponses({});
       setResearchSources([]);
       setOnePager(null);
+      setAdvisorStances({});
+      setContradictionAlert(null);
       setResolution(null);
       setDecision(null);
       setErrors({});
@@ -117,6 +121,7 @@ export default function App() {
             synthesisModel: SYNTHESIS_MODEL,
             outputFormat: fmt || outputFormat,
             pastDecisions: referencedDecisions,
+            feedbackHistory: feedback.filter((f) => f.decision?.verdict).slice(0, 8),
           },
           (event, data) => {
             switch (event) {
@@ -138,6 +143,15 @@ export default function App() {
                 if (data.errors) setErrors(data.errors);
                 setWarnings(data.warnings || []);
                 setBoardQuestionsForUser(data.boardQuestionsForUser || []);
+                setAdvisorStances(data.advisorStances || {});
+                if (data.contradictionAlert) setContradictionAlert(data.contradictionAlert);
+                break;
+              case "contradiction_alert":
+                console.log("[CONTRADICTION ALERT RECEIVED]", data);
+                setContradictionAlert(data);
+                break;
+              case "auto_referenced":
+                console.log("[AUTO-REFERENCED]", data);
                 break;
               case "error":
                 setGlobalError(data.message);
@@ -151,7 +165,7 @@ export default function App() {
         setIsDeliberating(false);
       }
     },
-    [activeAdvisors, outputFormat, referencedDecisions]
+    [activeAdvisors, outputFormat, referencedDecisions, feedback]
   );
 
   const handleRate = useCallback(
@@ -305,6 +319,8 @@ export default function App() {
               warnings={warnings}
               researchSources={researchSources}
               activeAdvisors={activeAdvisors}
+              advisorStances={advisorStances}
+              contradictionAlert={contradictionAlert}
               onRate={handleRate}
               currentRating={rating}
             />

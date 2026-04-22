@@ -11,6 +11,7 @@ export async function deliberate(params, onEvent) {
     if (params.synthesisModel) formData.append("synthesisModel", params.synthesisModel);
     formData.append("outputFormat", params.outputFormat || "structured-memo");
     if (params.pastDecisions?.length) formData.append("pastDecisions", JSON.stringify(params.pastDecisions));
+    if (params.feedbackHistory?.length) formData.append("feedbackHistory", JSON.stringify(params.feedbackHistory));
     formData.append("file", params.file);
     fetchOptions = { method: "POST", body: formData };
   } else {

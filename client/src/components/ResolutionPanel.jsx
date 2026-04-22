@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   ThumbsUp, ThumbsDown, Globe, ChevronDown, ChevronUp, ExternalLink,
   ShieldCheck, ShieldAlert, Shield, Check, AlertTriangle, ArrowRight,
-  Scale, ChevronRight,
+  Scale, ChevronRight, Users, Zap, Eye,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { ADVISORS } from "../advisors";
@@ -171,12 +171,86 @@ function RiskAssessment({ risks }) {
   );
 }
 
+const STANCE_CONFIG = {
+  proceed:     { label: "Proceed",     className: "stance-proceed"     },
+  pause:       { label: "Pause",       className: "stance-pause"       },
+  avoid:       { label: "Avoid",       className: "stance-avoid"       },
+  investigate: { label: "Investigate", className: "stance-investigate" },
+};
+
+const ADVISOR_CONFIDENCE_CONFIG = {
+  high:   { label: "High",   className: "advisor-conf-high"   },
+  medium: { label: "Medium", className: "advisor-conf-medium" },
+  low:    { label: "Low",    className: "advisor-conf-low"    },
+};
+
+function ContradictionAlert({ alert, pastDecisionRef, explanation }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+  return (
+    <div className="contradiction-alert" role="alert">
+      <div className="contradiction-alert-header">
+        <Eye size={14} className="contradiction-icon" />
+        <span className="contradiction-label">
+          Contradiction detected{pastDecisionRef ? ` (vs ${pastDecisionRef})` : ""}
+        </span>
+        <button
+          type="button"
+          className="contradiction-dismiss"
+          onClick={() => setDismissed(true)}
+          aria-label="Dismiss"
+        >×</button>
+      </div>
+      <p className="contradiction-text">{alert}</p>
+      {explanation && <p className="contradiction-explanation">{explanation}</p>}
+    </div>
+  );
+}
+
+function ConsensusMeter({ score }) {
+  if (typeof score !== "number") return null;
+  const pct = Math.max(0, Math.min(100, score));
+  const label = pct >= 75 ? "Strong consensus" : pct >= 50 ? "Partial consensus" : "Divided board";
+  const cls = pct >= 75 ? "consensus-high" : pct >= 50 ? "consensus-mid" : "consensus-low";
+  return (
+    <div className={`consensus-meter ${cls}`}>
+      <div className="consensus-meter-header">
+        <Users size={13} />
+        <span className="consensus-meter-label">{label}</span>
+        <span className="consensus-meter-pct">{pct}% aligned</span>
+      </div>
+      <div className="consensus-meter-track">
+        <div className="consensus-meter-fill" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function WeaknessPanel({ weaknesses }) {
+  const items = Array.isArray(weaknesses) ? weaknesses.filter(Boolean) : [];
+  if (!items.length) return null;
+  return (
+    <div className="weakness-panel">
+      <div className="weakness-panel-label">
+        <Zap size={13} /> Decision blind spots
+      </div>
+      <ul className="weakness-list">
+        {items.map((w, i) => (
+          <li key={i} className="weakness-item">{w}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function ResolutionPanel({
   resolution,
   decision,
   warnings,
   researchSources,
   activeAdvisors = [],
+  advisorStances = {},
+  contradictionAlert,
   onRate,
   currentRating,
 }) {
@@ -201,6 +275,14 @@ export default function ResolutionPanel({
         <div className="resolution-warnings">
           {warnings.map((w, i) => <p key={i}>{w}</p>)}
         </div>
+      )}
+
+      {contradictionAlert && (
+        <ContradictionAlert
+          alert={contradictionAlert.alert}
+          pastDecisionRef={contradictionAlert.pastDecisionRef}
+          explanation={contradictionAlert.explanation}
+        />
       )}
 
       {hasStructured ? (
@@ -266,14 +348,20 @@ export default function ResolutionPanel({
           )}
 
           {/* Board Discussion — voices, consensus, narrative */}
-          {(advisorHighlightRows.length > 0 || toArray(decision.consensus).length > 0 || decision.narrative) && (
-            <CollapsibleSection title="Board Discussion">
+          {(advisorHighlightRows.length > 0 || toArray(decision.consensus).length > 0 || decision.narrative || typeof decision.consensusScore === "number") && (
+            <CollapsibleSection title="Board Discussion" defaultOpen>
+              {typeof decision.consensusScore === "number" && (
+                <ConsensusMeter score={decision.consensusScore} />
+              )}
               {advisorHighlightRows.length > 0 && (
                 <div className="analysis-sub">
                   <div className="analysis-sub-label">Board voices</div>
                   <div className="board-voices-list">
                     {advisorHighlightRows.map((row, i) => {
                       const advisor = ADVISORS.find((a) => a.name === row.name);
+                      const stance = advisorStances[advisor?.id];
+                      const stanceCfg = stance ? STANCE_CONFIG[stance.stance] : null;
+                      const confCfg = stance ? ADVISOR_CONFIDENCE_CONFIG[stance.confidence] : null;
                       return (
                         <div
                           key={i}
@@ -286,8 +374,21 @@ export default function ResolutionPanel({
                             </span>
                             <span className="board-voice-name">{row.name}</span>
                             <span className="board-voice-role">{advisor?.roleShort || advisor?.role}</span>
+                            {stanceCfg && (
+                              <span className={`advisor-stance-badge ${stanceCfg.className}`}>
+                                {stanceCfg.label}
+                              </span>
+                            )}
+                            {confCfg && (
+                              <span className={`advisor-conf-badge ${confCfg.className}`}>
+                                {confCfg.label} conf.
+                              </span>
+                            )}
                           </div>
                           <p className="board-voice-text">{row.highlight}</p>
+                          {stance?.stanceRationale && (
+                            <p className="board-voice-rationale">{stance.stanceRationale}</p>
+                          )}
                         </div>
                       );
                     })}
@@ -311,9 +412,17 @@ export default function ResolutionPanel({
             </CollapsibleSection>
           )}
 
-          {/* Diverging Opinions — conflicts, risks, dissent */}
-          {(toArray(decision.conflictsResolved).length > 0 || toArray(decision.risks).length > 0 || decision.dissent) && (
-            <CollapsibleSection title="Diverging Opinions">
+          {/* Diverging Opinions — conflicts, risks, dissent, minority, weaknesses */}
+          {(toArray(decision.conflictsResolved).length > 0 || toArray(decision.risks).length > 0 || decision.dissent || decision.minorityView || toArray(decision.weaknesses).length > 0) && (
+            <CollapsibleSection title="Diverging Opinions" defaultOpen>
+              {decision.minorityView && (
+                <div className="analysis-sub">
+                  <div className="analysis-sub-label minority-label">
+                    <Users size={13} /> Minority position
+                  </div>
+                  <p className="minority-view-text">{decision.minorityView}</p>
+                </div>
+              )}
               {toArray(decision.conflictsResolved).length > 0 && (
                 <div className="analysis-sub">
                   <div className="analysis-sub-label">
@@ -337,6 +446,9 @@ export default function ResolutionPanel({
                   </div>
                   <p className="dissent-text">{decision.dissent}</p>
                 </div>
+              )}
+              {toArray(decision.weaknesses).length > 0 && (
+                <WeaknessPanel weaknesses={toArray(decision.weaknesses)} />
               )}
             </CollapsibleSection>
           )}

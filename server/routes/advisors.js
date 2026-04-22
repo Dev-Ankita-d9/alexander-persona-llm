@@ -180,6 +180,10 @@ function parseDeliberateBody(req) {
     try { body.advisorModels = JSON.parse(body.advisorModels); } catch { body.advisorModels = {}; }
   }
 
+  if (typeof body.feedbackHistory === "string") {
+    try { body.feedbackHistory = JSON.parse(body.feedbackHistory); } catch { body.feedbackHistory = []; }
+  }
+
   return {
     query: body.query,
     activeIds: body.activeAdvisors,
@@ -188,6 +192,7 @@ function parseDeliberateBody(req) {
     synthesisModel: body.synthesisModel || null,
     outputFormat: body.outputFormat || "structured-memo",
     pastDecisions: body.pastDecisions || [],
+    feedbackHistory: body.feedbackHistory || [],
   };
 }
 
@@ -211,10 +216,12 @@ router.post("/deliberate", optionalFileUpload, async (req, res) => {
   }
 
   try {
-    const { query, activeIds, fileContext: bodyFileContext, advisorModels, synthesisModel, outputFormat, pastDecisions } = parseDeliberateBody(req);
+    const { query, activeIds, fileContext: bodyFileContext, advisorModels, synthesisModel, outputFormat, pastDecisions, feedbackHistory } = parseDeliberateBody(req);
     const sessionStart = Date.now();
     const log = createSession(query, activeIds || [], req.file?.originalname);
     const chairModel = synthesisModel || DEFAULT_MODEL;
+
+    console.log(`[DEBUG] Request received: pastDecisions=${pastDecisions?.length || 0}, feedbackHistory=${feedbackHistory?.length || 0}`);
 
     // Extract file context: uploaded file takes priority, then body text
     let fileContext = bodyFileContext;
@@ -354,12 +361,65 @@ router.post("/deliberate", optionalFileUpload, async (req, res) => {
 
     let userMessage = buildUserMessage(query, fileContext, researchContext, structuredContext, enrichmentContext);
 
-    if (pastDecisions?.length > 0) {
-      const pastContext = pastDecisions
+    // Auto-select relevant past decisions from feedback history when none are manually chosen
+    let effectivePastDecisions = pastDecisions || [];
+    if (effectivePastDecisions.length === 0 && feedbackHistory?.length > 0) {
+      try {
+        const candidateSummary = feedbackHistory
+          .slice(0, 8)
+          .map((f, i) => `[${i}] "${f.query}" → ${f.decision?.verdict?.slice(0, 120) || f.synthesis?.slice(0, 120) || "no verdict"}`)
+          .join("\n");
+        const autoPickRaw = await callLLM({
+          systemPrompt: `You are a relevance selector. Given a new question and a list of past decisions, pick the index(es) of the past decisions most likely to be relevant to the new question — same domain, related strategy, or potential contradiction. Return ONLY valid JSON: {"relevant": [0, 1, ...] — array of indexes, empty array if none are relevant}`,
+          userMessage: `New question: "${query}"\n\nPast decisions:\n${candidateSummary}\n\nWhich past decisions are relevant? Return index numbers only.`,
+          model: DEFAULT_MODEL,
+          maxTokens: 100,
+        });
+        const autoPickData = parseJsonFromLLM(autoPickRaw);
+        if (Array.isArray(autoPickData?.relevant) && autoPickData.relevant.length > 0) {
+          effectivePastDecisions = autoPickData.relevant
+            .slice(0, 2)
+            .map((idx) => feedbackHistory[idx])
+            .filter(Boolean);
+          if (effectivePastDecisions.length > 0) {
+            log.info(`Auto-selected ${effectivePastDecisions.length} relevant past decision(s) from feedback history`);
+            send("auto_referenced", { count: effectivePastDecisions.length, queries: effectivePastDecisions.map((d) => d.query) });
+          }
+        }
+      } catch (err) {
+        log.error("Auto Past Decision Selection", err.message);
+      }
+    }
+
+    let contradictionAlert = null;
+    if (effectivePastDecisions?.length > 0) {
+      const pastContext = effectivePastDecisions
         .slice(0, 3)
         .map((d, i) => `Decision ${i + 1} (${new Date(d.timestamp).toLocaleDateString()}): "${d.query}"\nVerdict: ${d.decision?.verdict || d.synthesis}`)
         .join("\n\n");
       userMessage += `\n\n<past_decisions>\nFor context, here are relevant past board decisions the user wants to reference:\n\n${pastContext}\n</past_decisions>`;
+
+      // Contradiction detection — run in parallel with downstream steps
+      try {
+        const contradictionRaw = await callLLM({
+          systemPrompt: `You are a decision consistency analyst. Detect whether the current question risks producing a recommendation that directly contradicts a past decision. Return ONLY valid JSON: {"hasContradiction": boolean, "alert": "string or null", "pastDecisionRef": "string or null — e.g. 'Decision 2'", "explanation": "string or null — one sentence on why this matters"}`,
+          userMessage: `Current question: "${query}"\n\nPast decisions:\n${pastContext}\n\nIs there a genuine logical contradiction risk — same domain, opposing implied actions? Only flag real conflicts, not merely related topics.`,
+          model: DEFAULT_MODEL,
+          maxTokens: 250,
+        });
+        const cData = parseJsonFromLLM(contradictionRaw);
+        if (cData?.hasContradiction && cData?.alert) {
+          contradictionAlert = {
+            alert: cData.alert,
+            pastDecisionRef: cData.pastDecisionRef || null,
+            explanation: cData.explanation || null,
+          };
+          send("contradiction_alert", contradictionAlert);
+          log.info(`Contradiction detected: ${cData.alert}`);
+        }
+      } catch (err) {
+        log.error("Contradiction Detection", err.message);
+      }
     }
 
     // Phase 1: Distribute to board members
@@ -427,6 +487,30 @@ router.post("/deliberate", optionalFileUpload, async (req, res) => {
       log.error("Deliberation", "All board members failed to respond");
       send("error", { message: "All board members failed to respond." });
       return res.end();
+    }
+
+    // Extract per-advisor stance signals (confidence + recommendation direction)
+    const advisorStances = {};
+    try {
+      const stanceResults = await Promise.allSettled(
+        Object.entries(advisorResponses).map(([id, response]) => {
+          const advisor = advisors.find((a) => a.id === id);
+          return callLLM({
+            systemPrompt: `Extract the advisor's confidence and recommendation stance from their response. Return ONLY valid JSON: {"confidence": "high|medium|low", "stance": "proceed|pause|avoid|investigate", "stanceRationale": "string — one tight sentence on their core position"}`,
+            userMessage: `Advisor: ${advisor?.name || id} (${advisor?.role || "Advisor"})\n\nTheir response:\n${response.slice(0, 1200)}\n\nExtract their confidence level and recommendation stance. Be honest — if they are hedging or uncertain, say "low". If they are clearly recommending action, say "proceed".`,
+            model: DEFAULT_MODEL,
+            maxTokens: 150,
+          }).then((raw) => ({ id, data: parseJsonFromLLM(raw) }));
+        })
+      );
+      stanceResults.forEach((result) => {
+        if (result.status === "fulfilled" && result.value?.data?.confidence) {
+          advisorStances[result.value.id] = result.value.data;
+        }
+      });
+      log.info(`Advisor stances extracted: ${Object.keys(advisorStances).length}`);
+    } catch (err) {
+      log.error("Stance Extraction", err.message);
     }
 
     // Quick-answer shortcut: skip scoring/refinement/debate/follow-up, go straight to Chair
@@ -847,6 +931,9 @@ FIELD RULES:
 - "advisorHighlights": Required. For each advisor who participated, provide a one-sentence quote or paraphrase of their most distinctive contribution — the specific angle, risk, or insight only they raised. Use their exact name as it appears in the board members list.
 - "actionItems": Provide exactly 2–5 items. Never fewer than 2, never more than 5. Each must be a distinct concrete step — not a restatement of the verdict. Assign owner honestly: "user" = the human must do this personally; "ai" = can be executed by an AI tool (drafting, research, code, analysis); "external" = requires a third party (lawyer, accountant, agency, vendor). Do NOT default everything to "user" — if AI can realistically handle it, use "ai"; if it needs a specialist or vendor, use "external".
 - "narrative": Use null. The verdict and keyReasoning are enough.
+- "consensusScore": An integer 0–100 representing the percentage of the board that genuinely aligned on the core recommendation (not just surface agreement). 100 = unanimous, 0 = every advisor opposed. Be honest — if 3 of 4 agreed on direction, score 75.
+- "minorityView": If one advisor stood alone against the majority, capture their single strongest argument here in one sentence. This is not "dissent" (which is for risks you're overruling) — this is amplifying a lone voice so it gets fair treatment. null if no clear minority.
+- "weaknesses": 1–3 strings identifying the specific gaps or assumptions in your own verdict that could prove wrong. These are the decision's blind spots — not generic risks, but specific things the board didn't have enough data on.
 
 Field types: confidence is one of "high", "medium", "low". impact is one of "low", "medium", "high", "critical" — how consequential this decision is if acted on or ignored. actionItems[].priority is one of "now", "this-week", "later". actionItems[].owner is one of "user", "ai", "external". risks[].severity is one of "high", "medium", "low".
 
@@ -857,6 +944,9 @@ Respond with ONLY valid JSON (no markdown, no text outside the JSON):
   "keyReasoning": ["3–5 strings — the actual reasons, not advisor summaries"],
   "confidence": "high|medium|low",
   "confidenceRationale": "string — what would change this confidence level",
+  "weaknesses": ["1–3 strings — specific blind spots or missing data that could undermine this verdict"],
+  "consensusScore": 0,
+  "minorityView": "string or null — the lone dissenter's single strongest argument, or null if no clear minority",
   "consensus": ["strings — where advisors genuinely agreed on the underlying facts, not just the conclusion"],
   "conflictsResolved": [
     {
@@ -981,10 +1071,12 @@ Respond with ONLY valid JSON (no markdown, no text outside the JSON):
       } : null,
       advisorResponses,
       advisorModelUsed,
+      advisorStances,
       debateResponses,
       followUpQuestions,
       followUpResponses,
       researchSources,
+      contradictionAlert,
       errors,
       warnings,
     });
