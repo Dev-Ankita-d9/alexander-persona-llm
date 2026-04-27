@@ -85,13 +85,9 @@ async function extractRawContent(file) {
 
   if (ext === ".pptx") {
     const officeParser = require("officeparser");
-    const text = await new Promise((resolve, reject) => {
-      officeParser.parseOffice(filePath, (data, err) => {
-        if (err) reject(err);
-        else resolve(data || "");
-      });
-    });
-    return { type: "pptx", text };
+    const buffer = fs.readFileSync(filePath);
+    const text = await officeParser.parseOffice(buffer);
+    return { type: "pptx", text: text || "" };
   }
 
   // .txt, .csv, .md, .json

@@ -1,0 +1,18 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "feature/board-decision-ux",
+    "feature/client-ui-brand-persona",
+    "main"
+  ],
+  "parent": {
+    "feature/board-decision-ux": "main",
+    "feature/client-ui-brand-persona": "main",
+    "main": null
+  },
+  "order": [
+    "main",
+    "feature/board-decision-ux",
+    "feature/client-ui-brand-persona"
+  ]
+}
