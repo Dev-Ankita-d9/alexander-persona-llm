@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
-import { ADVISORS, SYNTHESIS_MODEL, getAdvisorModelsMap } from "./advisors";
+import { ADVISORS, BOARD_PRESETS, SYNTHESIS_MODEL, getAdvisorModelsMap } from "./advisors";
 import {
   deliberate,
+  deliberateFollowup,
   refineWithFeedback,
   submitFeedback,
   getFeedbackHistory,
+  deleteFeedback,
+  clearAllFeedback,
 } from "./api";
 import QueryPanel from "./components/QueryPanel";
 import PersonaToggleBar from "./components/PersonaToggleBar";
@@ -14,7 +17,11 @@ import BoardInsights from "./components/BoardInsights";
 import FeedbackRefineButton from "./components/FeedbackRefineButton";
 import HistoryPanel from "./components/HistoryPanel";
 import OnePagerPanel from "./components/OnePagerPanel";
+import EmailDraftPanel from "./components/EmailDraftPanel";
+import BoardFollowUpPanel from "./components/BoardFollowUpPanel";
+import PastDecisionPicker from "./components/PastDecisionPicker";
 import ThemeToggle from "./components/ThemeToggle";
+import BrandSparkleLogo from "./components/BrandSparkleLogo";
 
 const ADVISOR_MODELS = getAdvisorModelsMap();
 
@@ -28,9 +35,10 @@ function getInitialTheme() {
 
 export default function App() {
   const [theme, setTheme] = useState(getInitialTheme);
-  const [activeAdvisors, setActiveAdvisors] = useState(
-    ADVISORS.map((a) => a.id)
-  );
+  const [activeAdvisors, setActiveAdvisors] = useState(ADVISORS.map((a) => a.id));
+  const [outputFormat, setOutputFormat] = useState("structured-memo");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
   const [query, setQuery] = useState("");
   const [isDeliberating, setIsDeliberating] = useState(false);
   const [currentStage, setCurrentStage] = useState(null);
@@ -47,7 +55,12 @@ export default function App() {
   const [rating, setRating] = useState(null);
   const [isRefining, setIsRefining] = useState(false);
   const [refinement, setRefinement] = useState(null);
+  const [boardQuestionsForUser, setBoardQuestionsForUser] = useState([]);
+  const [isAnsweringBoard, setIsAnsweringBoard] = useState(false);
   const [feedback, setFeedback] = useState([]);
+  const [referencedDecisions, setReferencedDecisions] = useState([]);
+  const [advisorStances, setAdvisorStances] = useState({});
+  const [contradictionAlert, setContradictionAlert] = useState(null);
   const [globalError, setGlobalError] = useState(null);
 
   useEffect(() => {
@@ -71,8 +84,12 @@ export default function App() {
     );
   }, []);
 
+  const handlePresetSelect = useCallback((ids) => {
+    setActiveAdvisors(ids);
+  }, []);
+
   const handleSubmit = useCallback(
-    async ({ query: q, file }) => {
+    async ({ query: q, file, outputFormat: fmt }) => {
       setQuery(q);
       setIsDeliberating(true);
       setCurrentStage(null);
@@ -82,12 +99,16 @@ export default function App() {
       setFollowUpResponses({});
       setResearchSources([]);
       setOnePager(null);
+      setAdvisorStances({});
+      setContradictionAlert(null);
       setResolution(null);
       setDecision(null);
       setErrors({});
       setWarnings([]);
       setRating(null);
       setRefinement(null);
+      setBoardQuestionsForUser([]);
+      setIsAnsweringBoard(false);
       setGlobalError(null);
 
       try {
@@ -98,6 +119,9 @@ export default function App() {
             file: file || undefined,
             advisorModels: ADVISOR_MODELS,
             synthesisModel: SYNTHESIS_MODEL,
+            outputFormat: fmt || outputFormat,
+            pastDecisions: referencedDecisions,
+            feedbackHistory: feedback.filter((f) => f.decision?.verdict).slice(0, 8),
           },
           (event, data) => {
             switch (event) {
@@ -118,6 +142,16 @@ export default function App() {
                 if (data.researchSources) setResearchSources(data.researchSources);
                 if (data.errors) setErrors(data.errors);
                 setWarnings(data.warnings || []);
+                setBoardQuestionsForUser(data.boardQuestionsForUser || []);
+                setAdvisorStances(data.advisorStances || {});
+                if (data.contradictionAlert) setContradictionAlert(data.contradictionAlert);
+                break;
+              case "contradiction_alert":
+                console.log("[CONTRADICTION ALERT RECEIVED]", data);
+                setContradictionAlert(data);
+                break;
+              case "auto_referenced":
+                console.log("[AUTO-REFERENCED]", data);
                 break;
               case "error":
                 setGlobalError(data.message);
@@ -131,28 +165,29 @@ export default function App() {
         setIsDeliberating(false);
       }
     },
-    [activeAdvisors]
+    [activeAdvisors, outputFormat, referencedDecisions, feedback]
   );
 
   const handleRate = useCallback(
     async (r) => {
       setRating(r);
-      const entry = {
-        id: crypto.randomUUID(),
-        query,
-        synthesis: resolution,
-        rating: r,
-        advisorsUsed: activeAdvisors.map(
-          (id) => ADVISORS.find((a) => a.id === id)?.name || id
-        ),
-      };
+      if (r !== "helpful") return;
       try {
-        await submitFeedback(entry);
+        await submitFeedback({
+          id: crypto.randomUUID(),
+          query,
+          synthesis: resolution,
+          decision: decision || null,
+          rating: r,
+          advisorsUsed: activeAdvisors.map(
+            (id) => ADVISORS.find((a) => a.id === id)?.name || id
+          ),
+        });
         const history = await getFeedbackHistory();
         setFeedback(history);
       } catch {}
     },
-    [query, resolution, activeAdvisors]
+    [query, resolution, decision, activeAdvisors]
   );
 
   const handleRefine = useCallback(async () => {
@@ -177,62 +212,92 @@ export default function App() {
     }
   }, [query, resolution, rating, activeAdvisors]);
 
+  const handleFollowUpSubmit = useCallback(
+    async (answers) => {
+      setIsAnsweringBoard(true);
+      try {
+        const data = await deliberateFollowup({
+          originalQuery: query,
+          previousDecision: decision,
+          answers,
+          activeAdvisors,
+          synthesisModel: SYNTHESIS_MODEL,
+        });
+        if (data.resolution) setResolution(data.resolution);
+        if (data.decision) setDecision(data.decision);
+        setBoardQuestionsForUser([]);
+      } catch (err) {
+        setGlobalError(err.message);
+      } finally {
+        setIsAnsweringBoard(false);
+      }
+    },
+    [query, decision, activeAdvisors]
+  );
+
+  const hasResult = !!(resolution || decision);
+
   return (
-    <div className="app">
-      <header className="app-header">
-        <div className="header-content">
-          <div className="logo">
-            <div className="logo-icon">
-              <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden>
-                <rect width="28" height="28" rx="8" fill="url(#logo-grad)" />
-                <path
-                  d="M8 14h4m4 0h4M14 8v4m0 4v4"
-                  stroke="#fff"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-                <defs>
-                  <linearGradient
-                    id="logo-grad"
-                    x1="0"
-                    y1="0"
-                    x2="28"
-                    y2="28"
-                  >
-                    <stop stopColor="#6366f1" />
-                    <stop offset="1" stopColor="#06b6d4" />
-                  </linearGradient>
-                </defs>
-              </svg>
+    <div className="app app--mockup-home">
+      <header className="app-header app-header--mockup">
+        <div className="header-content header-content--mockup">
+          <div className="logo logo--mockup">
+            <div className="logo-icon logo-icon--mockup" aria-hidden>
+              <BrandSparkleLogo size={36} className="brand-sparkle-logo" />
             </div>
             <h1>Board Room</h1>
           </div>
-          <div className="header-right">
-            <p className="header-tagline">
-              AI-powered strategic advisory board
-            </p>
+          <div className="header-right header-right--mockup">
+            <p className="header-tagline header-tagline--mockup">AI advisory board</p>
             <ThemeToggle theme={theme} onToggle={toggleTheme} />
           </div>
         </div>
       </header>
 
-      <main className="app-main">
-        <section className="app-input-stack" aria-label="Question and board">
-          <QueryPanel onSubmit={handleSubmit} isLoading={isDeliberating} />
-          <div className="persona-shell">
+      <main className="app-main app-main--mockup antialiased">
+        {/* Input stack: query → board selection */}
+        <section
+          className="app-input-stack app-input-stack--mockup"
+          aria-label="Question and board"
+        >
+          <QueryPanel
+            onSubmit={handleSubmit}
+            isLoading={isDeliberating}
+            outputFormat={outputFormat}
+            onFormatChange={setOutputFormat}
+          />
+          <div className="persona-shell persona-shell--mockup">
             <PersonaToggleBar
               advisors={ADVISORS}
               activeAdvisors={activeAdvisors}
               onToggle={handleToggle}
+              presets={BOARD_PRESETS}
+              onPresetSelect={handlePresetSelect}
             />
           </div>
+          {feedback.filter((f) => f.decision?.verdict).length > 0 && (
+            <PastDecisionPicker
+              history={feedback.filter((f) => f.decision?.verdict)}
+              selected={referencedDecisions}
+              onChange={setReferencedDecisions}
+              onDelete={async (id) => {
+                await deleteFeedback(id).catch(() => {});
+                setReferencedDecisions((prev) => prev.filter((d) => d.id !== id));
+                const h = await getFeedbackHistory().catch(() => []);
+                setFeedback(h);
+              }}
+              onClearAll={async () => {
+                await clearAllFeedback().catch(() => {});
+                setReferencedDecisions([]);
+                setFeedback([]);
+              }}
+            />
+          )}
         </section>
 
         {globalError && (
           <div className="global-error" role="alert">
-            <span className="global-error-icon" aria-hidden="true">
-              !
-            </span>
+            <span className="global-error-icon" aria-hidden="true">!</span>
             {globalError}
           </div>
         )}
@@ -244,36 +309,80 @@ export default function App() {
           />
         )}
 
-        <div
-          className={`app-outcomes${isDeliberating ? " app-outcomes--busy" : ""}`}
-        >
-          <ResolutionPanel
-            resolution={resolution}
-            decision={decision}
-            warnings={warnings}
-            researchSources={researchSources}
-            onRate={handleRate}
-            currentRating={rating}
-          />
+        {/* Primary output */}
+        <div className={`app-outcomes${isDeliberating ? " app-outcomes--busy" : ""}`}>
+          {/* Structured memo / action-plan / quick-answer → ResolutionPanel */}
+          {hasResult && outputFormat !== "email-draft" && outputFormat !== "one-pager" && (
+            <ResolutionPanel
+              resolution={resolution}
+              decision={decision}
+              warnings={warnings}
+              researchSources={researchSources}
+              activeAdvisors={activeAdvisors}
+              advisorStances={advisorStances}
+              contradictionAlert={contradictionAlert}
+              onRate={handleRate}
+              currentRating={rating}
+            />
+          )}
 
-          <OnePagerPanel onePager={onePager} />
+          {/* One-pager format */}
+          {outputFormat === "one-pager" && onePager && (
+            <OnePagerPanel onePager={onePager} decision={decision} />
+          )}
 
-          <FeedbackRefineButton
-            onRefine={handleRefine}
-            isRefining={isRefining}
-            refinement={refinement}
-            canRefine={!!rating && !!resolution}
-          />
+          {/* Email draft format */}
+          {outputFormat === "email-draft" && hasResult && (
+            <EmailDraftPanel decision={decision} query={query} />
+          )}
 
-          <BoardInsights
-            advisorResponses={advisorResponses}
-            debateResponses={debateResponses}
-            followUpQuestions={followUpQuestions}
-            followUpResponses={followUpResponses}
-            errors={errors}
-          />
+          {hasResult && boardQuestionsForUser.length > 0 && (
+            <BoardFollowUpPanel
+              questions={boardQuestionsForUser}
+              onSubmit={handleFollowUpSubmit}
+              isLoading={isAnsweringBoard}
+            />
+          )}
 
-          <HistoryPanel feedback={feedback} />
+          {hasResult && (
+            <FeedbackRefineButton
+              onRefine={handleRefine}
+              isRefining={isRefining}
+              refinement={refinement}
+              canRefine={!!rating && !!resolution}
+            />
+          )}
+
+          {/* Advanced view toggle */}
+          {hasResult && (
+            <div className="advanced-view-toggle">
+              <button
+                type="button"
+                className="advanced-toggle-btn"
+                onClick={() => setShowAdvanced((v) => !v)}
+                aria-expanded={showAdvanced}
+              >
+                {showAdvanced ? "Hide board deliberation" : "Show board deliberation"}
+                <span className="advanced-toggle-chevron" aria-hidden>
+                  {showAdvanced ? "▲" : "▼"}
+                </span>
+              </button>
+            </div>
+          )}
+
+          {/* Secondary panels — hidden by default */}
+          {showAdvanced && (
+            <div className="advanced-panels">
+              <BoardInsights
+                advisorResponses={advisorResponses}
+                debateResponses={debateResponses}
+                followUpQuestions={followUpQuestions}
+                followUpResponses={followUpResponses}
+                errors={errors}
+              />
+              <HistoryPanel feedback={feedback} />
+            </div>
+          )}
         </div>
       </main>
 

@@ -9,13 +9,16 @@ export async function deliberate(params, onEvent) {
     formData.append("activeAdvisors", JSON.stringify(params.activeAdvisors));
     formData.append("advisorModels", JSON.stringify(params.advisorModels || {}));
     if (params.synthesisModel) formData.append("synthesisModel", params.synthesisModel);
+    formData.append("outputFormat", params.outputFormat || "structured-memo");
+    if (params.pastDecisions?.length) formData.append("pastDecisions", JSON.stringify(params.pastDecisions));
+    if (params.feedbackHistory?.length) formData.append("feedbackHistory", JSON.stringify(params.feedbackHistory));
     formData.append("file", params.file);
     fetchOptions = { method: "POST", body: formData };
   } else {
     fetchOptions = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(params),
+      body: JSON.stringify({ ...params, outputFormat: params.outputFormat || "structured-memo" }),
     };
   }
 
@@ -63,6 +66,26 @@ export async function deliberate(params, onEvent) {
   }
 }
 
+export async function deliberateFollowup({ originalQuery, previousDecision, answers, activeAdvisors, synthesisModel }) {
+  const res = await fetch(`${API_BASE}/advisors/deliberate-followup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ originalQuery, previousDecision, answers, activeAdvisors, synthesisModel }),
+  });
+  if (!res.ok) throw new Error("Follow-up refinement failed");
+  return res.json();
+}
+
+export async function generateEmailDraft({ decision, query, model }) {
+  const res = await fetch(`${API_BASE}/advisors/email-draft`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision, query, model }),
+  });
+  if (!res.ok) throw new Error("Email draft generation failed");
+  return res.json();
+}
+
 export async function refineWithFeedback({
   query,
   synthesis,
@@ -92,6 +115,18 @@ export async function submitFeedback(entry) {
 export async function getFeedbackHistory() {
   const res = await fetch(`${API_BASE}/feedback`);
   if (!res.ok) throw new Error("Failed to load history");
+  return res.json();
+}
+
+export async function deleteFeedback(id) {
+  const res = await fetch(`${API_BASE}/feedback/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete entry");
+  return res.json();
+}
+
+export async function clearAllFeedback() {
+  const res = await fetch(`${API_BASE}/feedback`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to clear history");
   return res.json();
 }
 
