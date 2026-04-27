@@ -22,6 +22,15 @@ app.use("/api/scoring-config", scoringConfigRoutes);
 
 app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 
+const frontendPath = path.join(__dirname, "../client/dist");
+
+// Serve static files
+app.use(express.static(frontendPath));
+
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "../client/dist/index.html"));
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
